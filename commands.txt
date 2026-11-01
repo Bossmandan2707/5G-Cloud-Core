@@ -1,0 +1,376 @@
+COMMAND LOG - Podman + Open5GS 5G core lab (Intel Mac, macOS 15.7.9)
+Every command run in this session, in order, each with a label of what it did.
+Lines starting with "#" are labels. "RESULT" lines note the outcome.
+Files created by the session: ~/python-monitoring/{app.py,requirements.txt,Containerfile}
+                              ~/open5gs-test/open5gs-pod.yaml  (pod spec + all NF configs)
+
+======================================================================
+PHASE 1 - HOMEBREW ATTEMPT (blocked: Homebrew no longer installs on Intel Macs)
+======================================================================
+
+# Your original command: install Podman and start a machine
+brew install podman && podman machine init && podman machine start
+RESULT: zsh: command not found: brew (exit 127)
+
+# Check CPU architecture, any existing brew, and Command Line Tools
+uname -m
+ls -d /opt/homebrew/bin/brew /usr/local/bin/brew
+xcode-select -p
+
+# Check Rosetta/CPU model and macOS version
+sysctl -n sysctl.proc_translated
+sysctl -n machdep.cpu.brand_string
+sw_vers
+
+# Run the official Homebrew installer (non-interactive)
+NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+RESULT: "Homebrew on macOS is only supported on Apple Silicon processors!" (exit 1)
+
+# Download installer script and find the Intel block
+curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/brew-install.sh
+grep -n -B 12 "only supported on Apple Silicon" /tmp/brew-install.sh
+
+# Check the latest Podman release assets (no Intel build in v6.x)
+curl -fsSL https://api.github.com/repos/containers/podman/releases/latest | /usr/bin/python3 -c '...list darwin assets...'
+
+# Find the newest Podman release that still ships macOS amd64 (v5.8.8)
+curl -fsSL "https://api.github.com/repos/containers/podman/releases?per_page=40" | /usr/bin/python3 -c '...list amd64 assets...'
+
+======================================================================
+PHASE 2 - INSTALL PODMAN 5.8.8 (Intel .pkg)
+======================================================================
+
+# Download the Podman 5.8.8 Intel installer and record its SHA-256
+curl -fL --progress-bar -o /tmp/podman-installer-macos-amd64.pkg https://github.com/containers/podman/releases/download/v5.8.8/podman-installer-macos-amd64.pkg
+ls -lh /tmp/podman-installer-macos-amd64.pkg
+shasum -a 256 /tmp/podman-installer-macos-amd64.pkg
+
+# Compare the checksum with the upstream shasums file
+curl -fsSL https://github.com/containers/podman/releases/download/v5.8.8/shasums | grep "podman-installer-macos-amd64.pkg"
+
+# Verify the package is signed (Red Hat Developer ID) and notarized by Apple
+pkgutil --check-signature /tmp/podman-installer-macos-amd64.pkg
+
+# Install the package system-wide (asks for sudo password)
+sudo installer -pkg /tmp/podman-installer-macos-amd64.pkg -target /
+
+# Confirm the binaries and version
+ls -l /opt/podman/bin
+/opt/podman/bin/podman --version
+command -v podman
+
+# Check for symlinks / PATH entry created by the installer
+ls -la /usr/local/bin/podman /usr/local/bin/podman-mac-helper
+ls /etc/paths.d/ ; cat /etc/paths.d/podman*
+cat ~/.zprofile
+
+# Confirm a fresh login shell finds podman via /etc/paths.d/podman-pkg
+zsh -lc 'command -v podman && podman --version'
+
+======================================================================
+PHASE 3 - PODMAN MACHINE (VM) AND DOCKER API COMPATIBILITY
+======================================================================
+
+# Create and start the Podman VM (applehv, rootless)
+zsh -lc 'podman machine init && podman machine start'
+
+# Verify the VM and run a smoke-test container
+zsh -lc 'podman machine list && podman run --rm quay.io/podman/hello'
+
+# Install the system helper that creates /var/run/docker.sock (asks for sudo password)
+sudo /opt/podman/bin/podman-mac-helper install
+
+# Verify the helper's launchd plist and daemon exist
+ls -l /Library/LaunchDaemons/com.github.containers.podman.helper-*.plist
+ls -l /var/run/docker.sock
+sudo -n launchctl list | grep -i podman
+
+# Restart the VM so the Docker socket is created
+zsh -lc 'podman machine stop && podman machine start'
+
+# Verify the Docker-compatible API answers on /var/run/docker.sock
+ls -l /var/run/docker.sock
+curl -s --unix-socket /var/run/docker.sock http://d/version
+
+======================================================================
+PHASE 4 - INVENTORY AND KUBERNETES CHECK
+======================================================================
+
+# List machines, containers, images, volumes and host listening ports
+zsh -lc 'podman machine list; podman ps -a; podman images; podman volume ls; lsof -iTCP -sTCP:LISTEN -nP'
+
+# Look for Kubernetes tooling, kubeconfig, SSH hosts
+zsh -lc 'for t in kubectl helm k3s minikube kind k9s oc docker; do command -v $t || echo "$t not found"; done'
+ls -la ~/.kube
+echo "KUBECONFIG=${KUBECONFIG:-<unset>}"
+kubectl config get-contexts
+kubectl cluster-info --request-timeout=5s
+grep -iE "^\s*Host " ~/.ssh/config
+RESULT: no kubectl, no ~/.kube, no ~/.ssh/config (no cluster reachable from this Mac)
+
+======================================================================
+PHASE 5 - PYTHON MONITORING EXPORTER (container)
+======================================================================
+
+# (files created: ~/python-monitoring/app.py, requirements.txt, Containerfile)
+
+# Build the exporter image, run it, and read its metrics
+cd ~/python-monitoring
+podman build -t py-monitor:0.1 -f Containerfile .
+podman rm -f py-monitor
+podman run -d --name py-monitor -p 8000:8000 -e TARGETS="https://example.com,http://localhost:9" py-monitor:0.1
+podman ps --filter name=py-monitor
+curl -s localhost:8000/metrics | grep -E "^(host_|probe_)"
+
+======================================================================
+PHASE 6 - OPEN5GS CONTROL PLANE (NRF, AMF, SMF)
+======================================================================
+
+# Pull the Open5GS image and discover entrypoint, user, arch and binary paths
+podman pull docker.io/gradiant/open5gs:2.7.5
+podman image inspect docker.io/gradiant/open5gs:2.7.5 --format "Entrypoint={{.Config.Entrypoint}} Cmd={{.Config.Cmd}} User={{.Config.User}} Arch={{.Architecture}}"
+podman run --rm --entrypoint sh docker.io/gradiant/open5gs:2.7.5 -c "which open5gs-nrfd open5gs-amfd open5gs-smfd"
+
+# (file created: ~/open5gs-test/open5gs-pod.yaml with NRF, AMF, SMF)
+
+# Deploy the pod (replace any previous copy) and read the logs
+cd ~/open5gs-test
+podman kube play --replace open5gs-pod.yaml
+podman ps --pod
+podman logs open5gs-nrf ; podman logs open5gs-amf ; podman logs open5gs-smf
+RESULT: AMF aborted - missing amf.time.t3512.value (fixed in the YAML, redeployed OK)
+
+# Confirm registrations and the AMF NGAP SCTP listener
+podman logs open5gs-nrf 2>&1 | grep -iE "NF registered|heartbeat"
+podman logs open5gs-amf 2>&1 | grep -iE "NF registered|ngap|sctp"
+podman exec open5gs-amf sh -c "cat /proc/net/sctp/eps; ss -lntp"
+
+======================================================================
+PHASE 7 - UPF AND USER-PLANE INTERFACES
+======================================================================
+
+# (YAML edited: added upf.yaml config, upf container, /dev/net/tun volume)
+
+# Redeploy and check UPF
+podman kube play --replace open5gs-pod.yaml
+podman logs open5gs-upf
+RESULT: open() /dev/net/tun failed (13: Permission denied)
+
+# Diagnose the permission error inside the VM
+podman machine ssh "ls -lZ /dev/net/tun; getenforce; id; lsmod | grep -E '^tun|sctp'"
+RESULT: SELinux Enforcing, tun_tap_device_t -> fix: seLinuxOptions type spc_t on UPF container
+
+# (YAML edited: spc_t, NET_ADMIN, runAsUser 0; UPF start script assigns ogstun 10.45.0.1/16 and brings it up)
+
+# Redeploy and verify N4 PFCP association and the ogstun interface
+podman kube play --replace open5gs-pod.yaml
+podman logs open5gs-smf 2>&1 | grep -iE "pfcp|associat"
+podman logs open5gs-upf 2>&1 | grep -iE "pfcp|associat"
+podman exec open5gs-upf sh -c "ip -br addr show ogstun"
+
+======================================================================
+PHASE 8 - SUBSCRIBER DATABASE, AUTH FUNCTIONS, gNB AND UE
+======================================================================
+
+# Check pod state, VM memory, pull MongoDB / UERANSIM / dbctl images, inspect their tools
+podman ps --filter pod=open5gs
+podman machine ssh "free -m"
+podman pull docker.io/library/mongo:4.4
+podman pull docker.io/gradiant/ueransim:3.2.6
+podman pull docker.io/gradiant/open5gs-dbctl:0.10.3
+podman run --rm --entrypoint sh docker.io/gradiant/ueransim:3.2.6 -c "ls /usr/local/bin; which ping ip"
+podman run --rm --entrypoint sh docker.io/gradiant/open5gs-dbctl:0.10.3 -c "open5gs-dbctl"
+
+# (YAML edited: added mongodb, provision (dbctl add), udr, udm, ausf, gnb, ue containers + configs)
+
+# Deploy the full stack and inspect logs
+podman kube play --replace open5gs-pod.yaml
+podman logs open5gs-udr ; podman logs open5gs-udm ; podman logs open5gs-ausf
+podman logs open5gs-gnb ; podman logs open5gs-ue
+RESULT: NG Setup OK; UDR failed to connect to mongodb://mongo/open5gs
+
+# Find why UDR ignored db_uri: shipped config and image environment
+podman run --rm --entrypoint sh docker.io/gradiant/open5gs:2.7.5 -c "find / -name udr.yaml; grep -n db_uri /opt/open5gs/etc/open5gs/udr.yaml"
+podman image inspect docker.io/gradiant/open5gs:2.7.5 --format "{{range .Config.Env}}{{println .}}{{end}}"
+RESULT: image sets DB_URI=mongodb://mongo/open5gs -> overridden with env DB_URI on udr/pcf containers
+
+# Redeploy, then find the next failure in the AMF/AUSF/UDM/UDR chain
+podman kube play --replace open5gs-pod.yaml
+podman logs open5gs-amf 2>&1 | grep -iE "error|warn|suci|supi"
+RESULT: AMF needs PCF (No [npcf-am-policy-control]) -> added PCF container + pcf.yaml
+
+# Change PLMN 999/70 -> 998/01 and IMSI -> 998010000000001 everywhere in the spec
+cd ~/open5gs-test
+sed -i '' -e "s/mcc: 999/mcc: 998/g" -e "s/mnc: 70/mnc: 01/g" -e "s/mcc: '999'/mcc: '998'/g" -e "s/mnc: '70'/mnc: '01'/g" -e "s/999700000000001/998010000000001/g" open5gs-pod.yaml
+grep -nE "mcc|mnc|998010000000001" open5gs-pod.yaml
+
+# Redeploy and verify registration, PDU session and UE tunnel interface
+podman kube play --replace open5gs-pod.yaml
+podman ps --filter pod=open5gs
+podman logs open5gs-ue 2>&1 | grep -iE "Registration|PDU|uesimtun"
+podman logs open5gs-amf 2>&1 | grep -iE "registration complete|SUPI"
+podman logs open5gs-smf 2>&1 | grep -iE "UE SUPI|IPv4"
+podman exec open5gs-ue sh -c "ip -br addr show uesimtun0"
+RESULT: Registration + PDU session OK, uesimtun0 = 10.45.0.2/32
+
+# User-plane test (first attempt: ping lacked NET_RAW and ip_forward was 0)
+podman exec open5gs-ue sh -c "ping -c 4 -W 3 -I uesimtun0 8.8.8.8"
+podman exec open5gs-upf sh -c "cat /proc/sys/net/ipv4/ip_forward; iptables -t nat -S POSTROUTING; ip route"
+
+# (YAML edited: pod sysctl net.ipv4.ip_forward=1, MASQUERADE rule, NET_RAW on UE)
+# Redeploy + verification was cancelled by user; deploy had completed - state checked next
+
+# Collect full live state for the network map
+podman ps -a --filter pod=open5gs --format "{{.Names}}|{{.Status}}|{{.Image}}"
+podman exec open5gs-upf sh -c "ss -lntu; cat /proc/net/sctp/eps; ip -br addr"
+podman exec open5gs-upf cat /proc/sys/net/ipv4/ip_forward
+podman exec open5gs-upf iptables -t nat -S POSTROUTING
+podman machine list ; podman machine ssh "free -m"
+
+# User-plane ping again (with NET_RAW) and counter diagnostics
+podman exec open5gs-ue sh -c "ping -c 3 -W 3 -I uesimtun0 8.8.8.8"
+podman exec open5gs-ue sh -c "ip -s link show uesimtun0; ip -s link show ogstun; ip -s link show eth0; cat /proc/sys/net/ipv4/conf/*/rp_filter"
+RESULT: 100% packet loss. uesimtun0 TX 16 / RX 0. Likely cause (unconfirmed): UE and UPF share one
+        network namespace, so 10.45.0.2 is a local address and return traffic is treated as a martian source.
+
+======================================================================
+PHASE 9 - LAPTOP NETWORK, EXPOSURE AND FIREWALL
+======================================================================
+
+# Inspect laptop interfaces, default route, firewall state
+route -n get default
+networksetup -listallhardwareports
+networksetup -listnetworkserviceorder
+/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate
+/usr/libexec/ApplicationFirewall/socketfilterfw --getstealthmode
+sudo -n pfctl -s info
+RESULT: only Wi-Fi en0 192.168.1.70 (gw 192.168.1.1) active; no Ethernet adapter present; firewall was off
+
+# List host ports reachable from the LAN
+lsof -iTCP -sTCP:LISTEN -nP
+podman ps --format "{{.Names}} {{.Ports}}"
+RESULT: only lab service exposed was py-monitor on *:8000
+
+# Re-create the exporter bound to localhost only and verify
+podman rm -f py-monitor
+podman run -d --name py-monitor -p 127.0.0.1:8000:8000 -e TARGETS="https://example.com" py-monitor:0.1
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/metrics
+curl -s -m 3 -o /dev/null -w "%{http_code}\n" http://192.168.1.70:8000/metrics
+RESULT: 200 on localhost, refused on LAN address
+
+# Turn on macOS application firewall and stealth mode (asks for sudo password)
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
+
+# Verify the lab still works with the firewall enabled
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/metrics
+podman ps --filter pod=open5gs
+podman exec open5gs-upf sh -c "curl -s -m 5 -o /dev/null -w '%{http_code}\n' https://example.com"
+/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate
+/usr/libexec/ApplicationFirewall/socketfilterfw --getstealthmode
+
+======================================================================
+PHASE 10 - SUSE DEPLOYMENT KIT (files stored in the repo)
+======================================================================
+
+# Create the kit layout and copy the exporter source next to the pod spec
+mkdir -p ~/open5gs-test/suse/k3s ~/open5gs-test/suse/quadlet ~/open5gs-test/monitoring
+cp ~/python-monitoring/{app.py,requirements.txt,Containerfile} ~/open5gs-test/monitoring/
+
+# (files created: suse/00-bootstrap-os.sh 01-install-container-runtime.sh 02-firewall.sh
+#  03-deploy-core.sh 04-autostart-quadlet.sh 05-monitoring-exporter.sh 99-verify.sh
+#  quadlet/open5gs.kube k3s/10-install-k3s.sh k3s/20-deploy-core.sh README.txt)
+
+# Make scripts executable and syntax-check them (shellcheck was not installed)
+cd ~/open5gs-test/suse
+chmod +x *.sh k3s/*.sh
+for f in *.sh k3s/*.sh; do bash -n "$f"; done
+
+# Test the verify script against the live Mac lab (login shell so podman is on PATH)
+zsh -lc 'cd ~/open5gs-test/suse && /bin/bash ./99-verify.sh podman'
+RESULT: 5/5 control-plane checks PASS; user-plane ping FAIL (known issue)
+NOTE: the SUSE-specific scripts (zypper, firewalld, Quadlet, k3s) are NOT tested on SUSE.
+
+======================================================================
+PHASE 11 - SUBSCRIBER 998010000074544, GIT REPO, ATTACH TRACE
+======================================================================
+
+# Show the provisioned subscriber(s) in MongoDB
+podman exec open5gs-provision open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs showfiltered
+podman exec open5gs-provision open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs showpretty
+
+# Provision IMSI 998010000074544 (23806 -> lab PLMN 99801) and set MSISDN 26774544
+podman exec open5gs-provision open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs add 998010000074544 465B5CE8B199B49FAA5F0A2EE238A6BC E8ED289DEBA952E4283B54E88E6183CA
+podman exec open5gs-provision mongosh --quiet mongodb://127.0.0.1/open5gs --eval 'db.subscribers.updateOne({imsi:"998010000074544"},{$set:{msisdn:["26774544"]}})'
+NOTE: zsh does not word-split $VAR, so a "$P=podman exec ..." prefix variable fails - use a function.
+
+# Export every container's full log into one .txt
+podman logs -t open5gs-<name> ... > ~/open5gs-test/logs/open5gs-full-log-<timestamp>.txt
+
+# Create the git repo and stage the files (not yet committed/pushed - needs identity + GitLab remote)
+cd ~/open5gs-test && git init -b main
+git add .gitignore commands.txt open5gs-pod.yaml monitoring suse logs
+
+# Build a chronological UE-attach trace from the NF logs (Open5GS logs contain ANSI colour codes)
+python3 tools/extract_attach_trace.py logs/ue-attach-trace.txt
+
+======================================================================
+PHASE 12 - Gi / N6 INTERFACE VIA THE MAC'S WI-FI (UE moved to its own pod)
+======================================================================
+
+# Check subnet of the kube network, --ip support, UE image tools, Mac public IP
+podman network inspect podman-default-kube-network --format '{{range .Subnets}}{{.Subnet}}{{end}}'
+podman kube play --help | grep -E -- '--(ip|network)'
+curl -s https://api.ipify.org
+
+# (edited open5gs-pod.yaml: UE removed, gNB radio link bound to the pod's eth0 address;
+#  created ue-pod.yaml: UE in its own network namespace)
+
+# Deploy the core pod with a fixed IP, then the UE pod
+podman kube play --replace --network podman-default-kube-network --ip 10.89.0.50 open5gs-pod.yaml
+podman kube play --replace --network podman-default-kube-network ue-pod.yaml
+RESULT: UE attached from 10.89.0.12, PDU session up, uesimtun0 = 10.45.0.2
+
+# Prove the Gi path
+podman exec ue-ue ping -c 4 -W 3 -I uesimtun0 8.8.8.8
+RESULT: 0% loss, ~6.6 ms (was 100% loss with the UE inside the UPF namespace)
+podman exec ue-ue curl -s --interface uesimtun0 http://api.ipify.org     -> 2.107.166.54 (== Mac's Wi-Fi public IP)
+podman exec ue-ue curl -sk --interface uesimtun0 https://example.com      -> HTTP 200
+NOTE: HTTPS without -k failed locally: the UERANSIM image has no CA bundle (not a network issue).
+
+# Failed hypothesis (MTU) - tested and reverted
+podman exec ue-ue ip link set uesimtun0 mtu 1400 ; podman exec open5gs-upf ip link set ogstun mtu 1400
+podman exec open5gs-upf ip link set ogstun mtu 1500    # restored to the spec value
+
+# Radio-link loss after a 10 MB download (gNB: 'UE[1] signal lost') -> recreate the UE pod
+podman kube play --replace --network podman-default-kube-network ue-pod.yaml
+
+# SUSE kit updated for the two-pod layout (03-deploy-core.sh, 04-autostart-systemd.sh + systemd/*.service,
+# k3s/20-deploy-core.sh, 99-verify.sh, README.txt; Quadlet files removed)
+git rm -rq --cached suse/quadlet suse/04-autostart-quadlet.sh ; rm -r suse/quadlet suse/04-autostart-quadlet.sh
+
+======================================================================
+DAY-TO-DAY COMMANDS (reference)
+======================================================================
+
+# Start / redeploy the lab (core pod with fixed IP, then the UE pod)
+podman kube play --replace --network podman-default-kube-network --ip 10.89.0.50 ~/open5gs-test/open5gs-pod.yaml
+podman kube play --replace --network podman-default-kube-network ~/open5gs-test/ue-pod.yaml
+
+# Stop and remove both pods
+podman kube down ~/open5gs-test/ue-pod.yaml
+podman kube down ~/open5gs-test/open5gs-pod.yaml
+
+# Watch a network function's logs
+podman logs -f open5gs-amf
+
+# Check UE session and tunnel
+podman logs ue-ue 2>&1 | grep "TUN interface"
+podman exec ue-ue ip -br addr show uesimtun0
+
+# Check the Gi/N6 path (egress IP should equal the Mac's Wi-Fi public IP)
+podman exec ue-ue curl -s --interface uesimtun0 http://api.ipify.org
+
+# Start / stop the Podman VM
+podman machine start
+podman machine stop

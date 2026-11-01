@@ -1,0 +1,324 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: open5gs-config
+data:
+  nrf.yaml: |
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    nrf:
+      serving:
+        - plmn_id:
+            mcc: 998
+            mnc: 01
+      sbi:
+        server:
+          - address: 127.0.0.10
+            port: 7777
+  amf.yaml: |
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    amf:
+      sbi:
+        server:
+          - address: 127.0.0.5
+            port: 7777
+        client:
+          nrf:
+            - uri: http://127.0.0.10:7777
+      ngap:
+        server:
+          - address: 127.0.0.5
+      metrics:
+        server:
+          - address: 127.0.0.5
+            port: 9090
+      guami:
+        - plmn_id:
+            mcc: 998
+            mnc: 01
+          amf_id:
+            region: 2
+            set: 1
+      tai:
+        - plmn_id:
+            mcc: 998
+            mnc: 01
+          tac: 1
+      plmn_support:
+        - plmn_id:
+            mcc: 998
+            mnc: 01
+          s_nssai:
+            - sst: 1
+      security:
+        integrity_order: [NIA2, NIA1, NIA0]
+        ciphering_order: [NEA0, NEA1, NEA2]
+      network_name:
+        full: Open5GS
+      amf_name: open5gs-amf0
+      time:
+        t3512:
+          value: 540
+  smf.yaml: |
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    smf:
+      sbi:
+        server:
+          - address: 127.0.0.4
+            port: 7777
+        client:
+          nrf:
+            - uri: http://127.0.0.10:7777
+      pfcp:
+        server:
+          - address: 127.0.0.4
+        client:
+          upf:
+            - address: 127.0.0.7
+      gtpc:
+        server:
+          - address: 127.0.0.4
+      gtpu:
+        server:
+          - address: 127.0.0.4
+      metrics:
+        server:
+          - address: 127.0.0.4
+            port: 9090
+      session:
+        - subnet: 10.45.0.0/16
+          gateway: 10.45.0.1
+      dns:
+        - 8.8.8.8
+        - 8.8.4.4
+      mtu: 1400
+  upf.yaml: |
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    upf:
+      pfcp:
+        server:
+          - address: 127.0.0.7
+        client:
+          smf:
+            - address: 127.0.0.4
+      gtpu:
+        server:
+          - address: 127.0.0.7
+      session:
+        - subnet: 10.45.0.0/16
+          gateway: 10.45.0.1
+      metrics:
+        server:
+          - address: 127.0.0.7
+            port: 9090
+  udr.yaml: |
+    db_uri: mongodb://127.0.0.1/open5gs
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    udr:
+      sbi:
+        server:
+          - address: 127.0.0.20
+            port: 7777
+        client:
+          nrf:
+            - uri: http://127.0.0.10:7777
+  udm.yaml: |
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    udm:
+      sbi:
+        server:
+          - address: 127.0.0.12
+            port: 7777
+        client:
+          nrf:
+            - uri: http://127.0.0.10:7777
+  ausf.yaml: |
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    ausf:
+      sbi:
+        server:
+          - address: 127.0.0.11
+            port: 7777
+        client:
+          nrf:
+            - uri: http://127.0.0.10:7777
+  pcf.yaml: |
+    db_uri: mongodb://127.0.0.1/open5gs
+    logger:
+      level: info
+    global:
+      max:
+        ue: 1024
+    pcf:
+      sbi:
+        server:
+          - address: 127.0.0.13
+            port: 7777
+        client:
+          nrf:
+            - uri: http://127.0.0.10:7777
+  gnb.yaml: |
+    mcc: '998'
+    mnc: '01'
+    nci: '0x000000010'
+    idLength: 32
+    tac: 1
+    linkIp: 127.0.0.1
+    ngapIp: 127.0.0.1
+    gtpIp: 127.0.0.1
+    amfConfigs:
+      - address: 127.0.0.5
+        port: 38412
+    slices:
+      - sst: 1
+    ignoreStreamIds: true
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: open5gs
+  labels:
+    app: open5gs
+spec:
+  securityContext:
+    sysctls:
+      # N6 forwarding for UE traffic leaving via ogstun -> eth0
+      - name: net.ipv4.ip_forward
+        value: "1"
+  containers:
+    - name: nrf
+      image: docker.io/gradiant/open5gs:2.7.5
+      command: ["/opt/open5gs/bin/open5gs-nrfd", "-c", "/etc/open5gs/nrf.yaml"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - name: amf
+      image: docker.io/gradiant/open5gs:2.7.5
+      # start after NRF is listening; AMF retries registration but this avoids noisy logs
+      command: ["/bin/sh", "-c", "sleep 3 && exec /opt/open5gs/bin/open5gs-amfd -c /etc/open5gs/amf.yaml"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - name: smf
+      image: docker.io/gradiant/open5gs:2.7.5
+      command: ["/bin/sh", "-c", "sleep 3 && exec /opt/open5gs/bin/open5gs-smfd -c /etc/open5gs/smf.yaml"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - name: upf
+      image: docker.io/gradiant/open5gs:2.7.5
+      # root + NET_ADMIN + /dev/net/tun are required to create the ogstun (N6) interface.
+      # upfd creates ogstun but does not address it, so assign the gateway IP and bring it up.
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          /opt/open5gs/bin/open5gs-upfd -c /etc/open5gs/upf.yaml &
+          PID=$!
+          trap 'kill $PID' TERM INT
+          for i in $(seq 1 20); do ip link show ogstun >/dev/null 2>&1 && break; sleep 1; done
+          ip addr add 10.45.0.1/16 dev ogstun 2>/dev/null
+          ip link set ogstun up
+          # N6 NAT (ip_forward is enabled by the pod-level sysctl)
+          iptables -t nat -C POSTROUTING -s 10.45.0.0/16 ! -o ogstun -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.45.0.0/16 ! -o ogstun -j MASQUERADE || true
+          wait $PID
+      securityContext:
+        runAsUser: 0
+        # SELinux (enforcing in the Podman VM) blocks container_t from opening tun_tap_device_t
+        seLinuxOptions:
+          type: spc_t
+        capabilities:
+          add: ["NET_ADMIN"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+        - {name: tun, mountPath: /dev/net/tun}
+    - name: mongodb
+      image: docker.io/library/mongo:4.4
+      args: ["--bind_ip", "127.0.0.1"]
+    - name: provision
+      # inserts the test subscribers (IMSI 998010000000001; IMSI 998010000074544 / MSISDN 26774544)
+      # once MongoDB is reachable, then idles
+      image: docker.io/gradiant/open5gs-dbctl:0.10.3
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          until (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null; do sleep 1; done
+          sleep 3
+          open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs add 998010000000001 465B5CE8B199B49FAA5F0A2EE238A6BC E8ED289DEBA952E4283B54E88E6183CA
+          open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs add 998010000074544 465B5CE8B199B49FAA5F0A2EE238A6BC E8ED289DEBA952E4283B54E88E6183CA
+          mongosh --quiet mongodb://127.0.0.1/open5gs --eval 'db.subscribers.updateOne({imsi:"998010000074544"},{$set:{msisdn:["26774544"]}})'
+          open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs showfiltered
+          exec sleep infinity
+    - name: udr
+      image: docker.io/gradiant/open5gs:2.7.5
+      # the image bakes in DB_URI=mongodb://mongo/open5gs, which overrides db_uri in udr.yaml
+      env:
+        - name: DB_URI
+          value: mongodb://127.0.0.1/open5gs
+      command: ["/bin/bash", "-c", "until (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null; do sleep 1; done; sleep 4; exec /opt/open5gs/bin/open5gs-udrd -c /etc/open5gs/udr.yaml"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - name: pcf
+      image: docker.io/gradiant/open5gs:2.7.5
+      env:
+        - name: DB_URI
+          value: mongodb://127.0.0.1/open5gs
+      command: ["/bin/bash", "-c", "until (echo > /dev/tcp/127.0.0.1/27017) 2>/dev/null; do sleep 1; done; sleep 4; exec /opt/open5gs/bin/open5gs-pcfd -c /etc/open5gs/pcf.yaml"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - name: udm
+      image: docker.io/gradiant/open5gs:2.7.5
+      command: ["/bin/sh", "-c", "sleep 6 && exec /opt/open5gs/bin/open5gs-udmd -c /etc/open5gs/udm.yaml"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - name: ausf
+      image: docker.io/gradiant/open5gs:2.7.5
+      command: ["/bin/sh", "-c", "sleep 6 && exec /opt/open5gs/bin/open5gs-ausfd -c /etc/open5gs/ausf.yaml"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - name: gnb
+      image: docker.io/gradiant/ueransim:3.2.6
+      # The UE now lives in its own pod/network namespace (see ue-pod.yaml). The gNB's simulated
+      # radio link (UDP 4997) must therefore listen on this pod's eth0 address instead of loopback;
+      # N2/N3 toward AMF/UPF stay on 127.0.0.1 inside this pod.
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          sleep 20
+          LINK=$(ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)
+          sed "s/^linkIp:.*/linkIp: $LINK/" /etc/ueransim/gnb.yaml > /tmp/gnb.yaml
+          echo "gNB radio link on $LINK"
+          exec nr-gnb -c /tmp/gnb.yaml
+      volumeMounts:
+        - {name: config, mountPath: /etc/ueransim, readOnly: true}
+  volumes:
+    - name: config
+      configMap:
+        name: open5gs-config
+    - name: tun
+      hostPath:
+        path: /dev/net/tun
+        type: CharDevice

@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Logs and ZIP archives
+logs/
+*.[lL][oO][gG]
+*.[zZ][iI][pP]
+
+# Local secrets / credentials (none are used today - keep it that way)
+*.pem
+*.key
+.env
+*.kubeconfig
+kubeconfig*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
