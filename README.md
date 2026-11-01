@@ -89,6 +89,29 @@ I kept host performance and GTP-U traffic measurements separate so that general 
 
 My current setup uses a **custom dashboard and a Prometheus-compatible metrics endpoint**, rather than a separate Prometheus server or Grafana installation.
 
+## Running my dashboard locally
+
+With the Podman VM and both lab pods running, I can start the dashboard from the repository root:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r monitoring/requirements.txt
+podman build -t gtpu-mon:0.1 tools/gtpu-mon
+.venv/bin/python monitoring/dashboard.py
+```
+
+- Performance: http://127.0.0.1:8000/
+- Live GTP-U traces: http://127.0.0.1:8000/gtp
+- Prometheus-format metrics: http://127.0.0.1:8000/metrics
+
+The dashboard binds to localhost only. It uses port 8000, so I do not run the legacy `py-monitor` exporter on that port at the same time. The capture helper is removed when the dashboard shuts down normally. Packet history is bounded and kept in memory, not saved as a packet archive.
+
+I run the dashboard regression tests with:
+
+```bash
+.venv/bin/python -m unittest discover -s monitoring -p 'test_*.py' -v
+```
+
 ## What I demonstrated
 
 I demonstrated that my simulated UE could register with the 5G core, establish a PDU session, and reach the internet through the user plane.

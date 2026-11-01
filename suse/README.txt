@@ -53,14 +53,15 @@ ORDER - Kubernetes (k3s) path
 
 EXPECTED RESULT (from the Mac run)
   NRF: 6 NF registrations | N4 PFCP associated | N2 NG Setup successful
-  UE (IMSI 998010000000001, PLMN 998/01) registers, PDU session up, uesimtun0 = 10.45.0.x/32
+  UE (IMSI 999050000000001, PLMN 999/05) registers, PDU session up, uesimtun0 = 10.45.0.x/32
   Gi: ping 8.8.8.8 through uesimtun0 ~6 ms, 0% loss; UE egress public IP == host uplink public IP;
       ~10 MB download at ~26 Mbit/s through the tunnel.
 
 SUBSCRIBERS (provisioned by the "provision" container at pod start; MongoDB is not persisted)
+  999050000000001                    active UE; copies the legacy lab subscriber's test profile
   998010000000001                    K/OPc = Open5GS public test values
   998010000074544  MSISDN 26774544   same test K/OPc
-  Only 998010000000001 has a UE definition (ue-pod.yaml).
+  Only 999050000000001 has an active UE definition (ue-pod.yaml).
 
 KNOWN ISSUES
   1. UERANSIM radio-link loss: after ~8 minutes and a 10 MB download the gNB logged

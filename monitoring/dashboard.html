@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dan Powell Technologies · Performance</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a1020;color:#e7eefc}
+*{box-sizing:border-box}body{margin:0 auto;max-width:1440px;padding:32px}
+header{display:flex;justify-content:space-between;align-items:center;gap:20px}
+h1{font-size:28px;margin:4px 0}h2{font-size:16px;margin:0 0 18px}
+p,.muted{color:#97a9c6;font-size:14px;line-height:1.6}a{color:#66d9dd}
+.eyebrow{color:#66d9dd;font-size:12px;letter-spacing:2px}
+.badge{border:1px solid #2a4259;border-radius:24px;padding:9px 15px;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:26px 0 18px}
+.card,.panel{background:#121c30;border:1px solid #22314b;border-radius:14px;padding:22px}
+.value{font-size:32px;font-weight:650;margin:12px 0}.label{font-size:13px;color:#a9bbd5}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+canvas{width:100%;height:170px;display:block}.legend{font-size:12px;color:#97a9c6}
+.teal{color:#66d9dd}.purple{color:#ac9bff}.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;color:#97a9c6;font-weight:500}
+td,th{padding:13px 10px;border-bottom:1px solid #22314b;white-space:nowrap}
+.running{color:#6ae0aa}.stopped{color:#ffb878}#warning{color:#ffb878}
+footer{margin:22px 0;font-size:13px;color:#97a9c6}
+@media(max-width:850px){.grid{grid-template-columns:1fr 1fr}.charts{grid-template-columns:1fr}}
+@media(max-width:480px){body{padding:16px}.value{font-size:25px}header{align-items:start;flex-direction:column}}
+</style>
+</head>
+<body>
+<header><div><div class="eyebrow">OPEN5GS / UERANSIM · 5G LAB</div><h1>Dan Powell Technologies</h1>
+<p>Live host resources and lab-container telemetry. Local access only.<br>
+<a href="/">Performance</a> &nbsp; <a href="/gtp">Live GTP-U traces →</a></p></div>
+<span class="badge" id="connection">Connecting…</span></header>
+<div class="grid">
+<div class="card"><div class="label">HOST CPU</div><div class="value" id="cpu">—</div><div class="muted" id="load">Waiting for samples</div></div>
+<div class="card"><div class="label">HOST MEMORY</div><div class="value" id="memory">—</div><div class="muted" id="memorySize">—</div></div>
+<div class="card"><div class="label">HOST NETWORK · RECEIVE / SEND (Mbit/s)</div><div class="value" id="network">—</div><div class="muted">All host interfaces · not GTP-U throughput</div></div>
+<div class="card"><div class="label">LAB CONTAINERS RUNNING</div><div class="value" id="containers">—</div><div class="muted" id="disk">—</div></div>
+</div>
+<div class="charts">
+<section class="panel"><h2>Host CPU &amp; memory · recent history</h2><canvas id="resources"></canvas>
+<div class="legend"><span class="teal">CPU %</span> &nbsp; <span class="purple">Memory %</span> · 0–100% · samples every 2 seconds</div></section>
+<section class="panel"><h2>Host network throughput</h2><canvas id="traffic"></canvas>
+<div class="legend"><span class="teal">Receive</span> &nbsp; <span class="purple">Send</span> · Mbit/s · automatic scale</div></section>
+</div>
+<section class="panel"><h2>5G lab container status &amp; performance</h2>
+<p>Running means the process is up, not proof of UE registration or a healthy PDU session.
+Container network counters may be shared within each pod; do not add them together.</p>
+<p id="warning"></p>
+<div class="tablewrap"><table><thead><tr><th>Container</th><th>State</th><th>CPU</th><th>Memory used / limit</th><th>Network I/O (cumulative)</th><th>PIDs</th></tr></thead>
+<tbody id="rows"></tbody></table></div>
+<p class="muted" id="containerTime">Waiting for container samples…</p></section>
+<footer><span id="hostLabel">Native host metrics</span> · <a href="/metrics">Prometheus metrics</a> · History is in-memory and resets when this page is reloaded.</footer>
+<script>
+const $=id=>document.getElementById(id), history=[];
+let lastSample=0, busy=false;
+const percent=v=>Number(v).toFixed(1)+'%';
+const mbps=v=>(v*8/1e6).toFixed(2);
+const gib=v=>(v/1024**3).toFixed(1)+' GiB';
+function chart(id,series,max){
+  const c=$(id),r=c.getBoundingClientRect(),d=devicePixelRatio||1;
+  c.width=r.width*d;c.height=r.height*d;
+  const ctx=c.getContext('2d');ctx.scale(d,d);
+  const w=r.width,h=r.height,p=8;
+  ctx.strokeStyle='#25334c';ctx.lineWidth=1;
+  for(let i=0;i<5;i++){const y=p+(h-2*p)*i/4;ctx.beginPath();ctx.moveTo(p,y);ctx.lineTo(w-p,y);ctx.stroke();}
+  series.forEach(([key,color])=>{
+    ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();
+    history.forEach((s,i)=>{
+      const x=p+i/Math.max(history.length-1,1)*(w-2*p);
+      const y=h-p-Math.min(s[key]/max,1)*(h-2*p);
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    });ctx.stroke();
+  });
+}
+function draw(){
+  chart('resources',[['cpu','#66d9dd'],['memory','#ac9bff']],100);
+  chart('traffic',[['rx','#66d9dd'],['tx','#ac9bff']],
+    Math.max(1,...history.flatMap(s=>[s.rx,s.tx]))*1.1);
+}
+async function refresh(){
+  if(busy)return;busy=true;
+  try{
+    const response=await fetch('/api/snapshot',{cache:'no-store'});
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    const s=await response.json(),h=s.host;
+    if(!h)throw new Error('Waiting for host samples');
+    const stale=Date.now()/1000-h.updated>15;
+    $('connection').textContent=stale?'Host sample stale':'Live · '+new Date(h.updated*1000).toLocaleTimeString();
+    $('cpu').textContent=percent(h.cpu_percent);
+    $('load').textContent='1-minute load: '+h.load1.toFixed(2);
+    $('memory').textContent=percent(h.memory_percent);
+    $('memorySize').textContent=gib(h.memory_used)+' / '+gib(h.memory_total);
+    $('network').textContent=mbps(h.rx_bps)+' / '+mbps(h.tx_bps);
+    $('disk').textContent='Root disk used: '+percent(h.disk_percent);
+    $('hostLabel').textContent=h.label;
+    if(h.updated!==lastSample){
+      lastSample=h.updated;history.push({cpu:h.cpu_percent,memory:h.memory_percent,rx:h.rx_bps*8/1e6,tx:h.tx_bps*8/1e6});
+      if(history.length>150)history.shift();draw();
+    }
+    const rows=s.containers||[];
+    $('containers').textContent=rows.filter(c=>c.state==='running').length+' / '+rows.length;
+    $('warning').textContent=s.container_error||s.host_error||'';
+    $('rows').replaceChildren();
+    rows.forEach(c=>{
+      const tr=document.createElement('tr');
+      [c.name,c.state,c.cpu==null?'—':String(c.cpu),c.memory||'—',c.network||'—',c.pids==null?'—':String(c.pids)].forEach((value,i)=>{
+        const td=document.createElement('td');td.textContent=value;
+        if(i===1)td.className=c.state==='running'?'running':'stopped';tr.appendChild(td);
+      });$('rows').appendChild(tr);
+    });
+    $('containerTime').textContent=s.container_updated?
+      'Container samples every ~10 seconds · last update '+new Date(s.container_updated*1000).toLocaleTimeString():
+      'Waiting for Podman statistics…';
+  }catch(error){$('connection').textContent='Offline / waiting';$('warning').textContent=error.message;}
+  finally{busy=false;}
+}
+window.addEventListener('resize',draw);refresh();setInterval(refresh,2000);
+</script>
+</body>
+</html>

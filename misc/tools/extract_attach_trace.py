@@ -75,7 +75,7 @@ def main():
 
     lines = []
     lines.append("UE ATTACH TRACE  (gNB <-> AMF <-> AUSF/UDM/UDR/PCF <-> SMF <-> UPF)")
-    lines.append(f"Window: {fmt(lo)} - {fmt(hi)} (container clock, UTC)   UE: imsi-998010000000001, PLMN 998/01")
+    lines.append(f"Window: {fmt(lo)} - {fmt(hi)} (container clock, UTC)   UE: imsi-999050000000001, PLMN 999/05")
     lines.append("")
     lines.append("=== 1. N2 LINK SETUP (gNB -> AMF, SCTP 38412, NGAP NG Setup) ===")
     n2 = sorted((t, n, m) for n in ("gnb", "amf") for t, _, m in data[n] if any(k in m for k in N2_SETUP))

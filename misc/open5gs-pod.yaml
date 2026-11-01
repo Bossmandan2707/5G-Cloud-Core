@@ -12,8 +12,8 @@ data:
     nrf:
       serving:
         - plmn_id:
-            mcc: 998
-            mnc: 01
+            mcc: '999'
+            mnc: '05'
       sbi:
         server:
           - address: 127.0.0.10
@@ -41,20 +41,20 @@ data:
             port: 9090
       guami:
         - plmn_id:
-            mcc: 998
-            mnc: 01
+            mcc: '999'
+            mnc: '05'
           amf_id:
             region: 2
             set: 1
       tai:
         - plmn_id:
-            mcc: 998
-            mnc: 01
+            mcc: '999'
+            mnc: '05'
           tac: 1
       plmn_support:
         - plmn_id:
-            mcc: 998
-            mnc: 01
+            mcc: '999'
+            mnc: '05'
           s_nssai:
             - sst: 1
       security:
@@ -185,8 +185,8 @@ data:
           nrf:
             - uri: http://127.0.0.10:7777
   gnb.yaml: |
-    mcc: '998'
-    mnc: '01'
+    mcc: '999'
+    mnc: '05'
     nci: '0x000000010'
     idLength: 32
     tac: 1
@@ -259,7 +259,7 @@ spec:
       image: docker.io/library/mongo:4.4
       args: ["--bind_ip", "127.0.0.1"]
     - name: provision
-      # inserts the test subscribers (IMSI 998010000000001; IMSI 998010000074544 / MSISDN 26774544)
+      # provisions active IMSI 999050000000001 and retains the two legacy test subscribers
       # once MongoDB is reachable, then idles
       image: docker.io/gradiant/open5gs-dbctl:0.10.3
       command: ["/bin/bash", "-c"]
@@ -270,6 +270,7 @@ spec:
           open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs add 998010000000001 465B5CE8B199B49FAA5F0A2EE238A6BC E8ED289DEBA952E4283B54E88E6183CA
           open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs add 998010000074544 465B5CE8B199B49FAA5F0A2EE238A6BC E8ED289DEBA952E4283B54E88E6183CA
           mongosh --quiet mongodb://127.0.0.1/open5gs --eval 'db.subscribers.updateOne({imsi:"998010000074544"},{$set:{msisdn:["26774544"]}})'
+          mongosh --quiet mongodb://127.0.0.1/open5gs --eval 'const s=db.subscribers.findOne({imsi:"998010000000001"}); if(!s) throw new Error("Missing lab subscriber template"); delete s._id; s.imsi="999050000000001"; s.msisdn=[]; db.subscribers.updateOne({imsi:s.imsi},{$setOnInsert:s},{upsert:true});'
           open5gs-dbctl --db_uri=mongodb://127.0.0.1/open5gs showfiltered
           exec sleep infinity
     - name: udr

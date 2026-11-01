@@ -15,9 +15,9 @@ metadata:
   name: ue-config
 data:
   ue.yaml: |
-    supi: 'imsi-998010000000001'
-    mcc: '998'
-    mnc: '01'
+    supi: 'imsi-999050000000001'
+    mcc: '999'
+    mnc: '05'
     protectionScheme: 0
     homeNetworkPublicKey: '5a8d38864820197c3394b92613b20b91633cbd897119273bf8e4a6f4eec0a650'
     homeNetworkPublicKeyId: 1

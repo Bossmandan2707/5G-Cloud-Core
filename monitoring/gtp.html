@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dan Powell Technologies · Live GTP-U Traces</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a1020;color:#e7eefc}
+*{box-sizing:border-box}body{margin:0 auto;max-width:1450px;padding:30px}
+header{display:flex;align-items:center;justify-content:space-between;gap:20px}h1{font-size:28px;margin:6px 0}
+h2{font-size:17px;margin:0 0 14px}p,.muted{font-size:14px;color:#9aacca;line-height:1.7}
+a{color:#66d9dd}.eyebrow{font-size:12px;letter-spacing:2px;color:#66d9dd}
+.badge,button,select{background:#16243a;border:1px solid #30435f;color:#e7eefc;border-radius:8px;padding:10px 14px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:24px 0 16px}
+.panel,.card{background:#121c30;border:1px solid #22314b;border-radius:13px;padding:20px}
+.label{color:#a4b6d1;font-size:12px}.value{font-size:30px;font-weight:650;margin:12px 0}
+.split{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+canvas{display:block;width:100%;height:180px}.ul{color:#66d9dd}.dl{color:#ac9bff}.other{color:#ffbe75}
+.controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}
+button,select{cursor:pointer}table{border-collapse:collapse;width:100%;font-size:13px;font-family:ui-monospace,monospace}
+th,td{padding:11px 9px;border-bottom:1px solid #22314b;text-align:left;white-space:nowrap}
+th{color:#a4b6d1;font-weight:500}.tablewrap{overflow:auto;max-height:530px}thead th{position:sticky;top:0;background:#121c30}
+.path{font-size:15px;line-height:2.2}.note{border-left:3px solid #405878;padding-left:15px}
+@media(max-width:850px){.grid{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}}
+@media(max-width:480px){body{padding:16px}header{align-items:start;flex-direction:column}.value{font-size:24px}}
+</style>
+</head>
+<body>
+<header><div><div class="eyebrow">LIVE N3 USER PLANE · UDP 2152</div>
+<h1>Dan Powell Technologies</h1>
+<p><a href="/">← Performance</a> &nbsp; <a href="/gtp">GTP-U traces</a> &nbsp; <a href="/metrics">Prometheus metrics</a></p>
+</div><span class="badge" id="status">Connecting…</span></header>
+<p id="capture">Waiting for capture…</p>
+<div class="grid">
+<div class="card"><div class="label">UPLINK · UE → NETWORK</div><div class="value ul" id="ulRate">—</div><div class="muted" id="ulCount">—</div></div>
+<div class="card"><div class="label">DOWNLINK · NETWORK → UE</div><div class="value dl" id="dlRate">—</div><div class="muted" id="dlCount">—</div></div>
+<div class="card"><div class="label">CAPTURED PACKETS · SINCE START</div><div class="value" id="total">—</div><div class="muted" id="other">—</div></div>
+<div class="card"><div class="label">LAST PACKET</div><div class="value" id="last">—</div><div class="muted">Live capture · no replayed or simulated packets</div></div>
+</div>
+<div class="split">
+<section class="panel"><h2>GTP-U throughput · last 60 seconds</h2><canvas id="chart"></canvas>
+<p><span class="ul">Uplink</span> &nbsp; <span class="dl">Downlink</span> · Mbit/s · UDP payload bytes, including GTP headers</p></section>
+<section class="panel"><h2>Capture context</h2>
+<div class="path"><span class="ul">UL: gNB 127.0.0.1 → UPF 127.0.0.7</span><br>
+<span class="dl">DL: UPF 127.0.0.7 → gNB 127.0.0.1</span></div>
+<p>AMF / SMF signaling is not shown here. This page captures GTP-U transport metadata, not decoded NAS, NGAP or PFCP.</p>
+<p class="note" id="subscriber">Loading configured UE identity… GTP-U headers do not independently identify an IMSI.</p>
+</section>
+</div>
+<section class="panel"><h2>Real-time packet trace</h2>
+<div class="controls"><select id="direction" aria-label="Packet direction"><option value="ALL">All directions</option><option value="UL">Uplink</option><option value="DL">Downlink</option><option value="OTHER">Other GTP-U</option></select>
+<button id="pause">Pause display</button><span class="muted" id="rowsInfo">Latest packets appear first</span></div>
+<p class="muted" id="message"></p>
+<div class="tablewrap"><table><thead><tr><th>#</th><th>UTC time</th><th>Direction</th><th>Source</th><th>Destination</th><th>UDP payload bytes</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="muted">Only the latest 500 packet headers are kept in memory; counters cover this dashboard run. Display polls once per second.
+This lightweight capture is not a lossless packet recorder; brief capture rotations or high load can miss packets.
+Quiet periods are normal without UE traffic.</p>
+</section>
+<script>
+const $=id=>document.getElementById(id);
+let paused=false,busy=false,lastData=null;
+function chart(history){
+  const canvas=$('chart'),r=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1;
+  canvas.width=r.width*ratio;canvas.height=r.height*ratio;
+  const c=canvas.getContext('2d');c.scale(ratio,ratio);
+  const max=Math.max(0.01,...history.flatMap(h=>[h.UL,h.DL]))*1.15;
+  const w=r.width,h=r.height,p=10;
+  c.strokeStyle='#283850';c.lineWidth=1;
+  for(let i=0;i<5;i++){const y=p+i*(h-2*p)/4;c.beginPath();c.moveTo(p,y);c.lineTo(w-p,y);c.stroke();}
+  [['UL','#66d9dd'],['DL','#ac9bff']].forEach(([key,color])=>{
+    c.strokeStyle=color;c.lineWidth=2;c.beginPath();
+    history.forEach((row,i)=>{const x=p+i/Math.max(history.length-1,1)*(w-2*p),y=h-p-row[key]/max*(h-2*p);if(i===0)c.moveTo(x,y);else c.lineTo(x,y);});c.stroke();
+  });
+  c.fillStyle='#9aacca';c.font='11px system-ui';c.fillText(max.toFixed(3)+' Mbit/s',12,17);
+}
+function render(data){
+  $('status').textContent=paused?'Display paused':data.status==='live'?'Capture live':data.status;
+  $('capture').textContent=data.capture;
+  $('message').textContent=data.message;
+  const identity=data.ue_identity;
+  $('subscriber').textContent=identity&&identity.status==='configured'?
+    'Configured UE IMSI '+identity.imsi+' · MCC '+identity.mcc+' / MNC '+identity.mnc+
+    ' (from '+identity.source+'). GTP-U headers do not independently identify this IMSI; attachment must be verified from core signaling.':
+    'UE identity unavailable. GTP-U headers do not independently identify an IMSI.';
+  const totals=data.totals;
+  for(const [d,id] of [['UL','ul'],['DL','dl']]){
+    $(id+'Rate').textContent=data.rates[d].mbps.toFixed(3)+' Mbit/s';
+    $(id+'Count').textContent=(totals[d+'_packets']||0).toLocaleString()+' packets · '+data.rates[d].pps.toFixed(1)+' pkt/s (5s average)';
+  }
+  $('total').textContent=['UL','DL','OTHER'].reduce((sum,d)=>sum+(totals[d+'_packets']||0),0).toLocaleString();
+  $('other').textContent=(totals.OTHER_packets||0).toLocaleString()+' other packets';
+  $('last').textContent=data.last_seen?Math.max(0,Math.floor(Date.now()/1000-data.last_seen))+'s ago':'No traffic';
+  chart(data.history);
+  const direction=$('direction').value;
+  const packets=data.packets.filter(p=>direction==='ALL'||p.direction===direction).slice().reverse();
+  const fragment=document.createDocumentFragment();
+  packets.forEach(p=>{
+    const row=document.createElement('tr');
+    const stamp=new Date(p.timestamp*1000).toISOString().slice(11,23);
+    [p.id,stamp,p.direction,p.source+':'+p.source_port,p.destination+':'+p.destination_port,p.bytes].forEach((value,i)=>{
+      const td=document.createElement('td');td.textContent=String(value);
+      if(i===2)td.className=p.direction.toLowerCase();row.appendChild(td);
+    });fragment.appendChild(row);
+  });
+  $('rows').replaceChildren(fragment);
+  $('rowsInfo').textContent=packets.length+' headers shown · newest first'+(paused?' · paused':'');
+}
+async function refresh(){
+  if(busy||paused)return;busy=true;
+  try{
+    const response=await fetch('/api/gtp',{cache:'no-store'});
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    lastData=await response.json();
+    if(!paused)render(lastData);
+  }catch(error){$('status').textContent='Disconnected';$('message').textContent=error.message;}
+  finally{busy=false;}
+}
+$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Resume display':'Pause display';if(lastData)render(lastData);if(!paused)refresh();};
+$('direction').onchange=()=>{if(lastData)render(lastData);};
+window.addEventListener('resize',()=>{if(lastData)chart(lastData.history);});
+refresh();setInterval(refresh,1000);
+</script>
+</body>
+</html>
