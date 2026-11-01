@@ -6,6 +6,11 @@ logs/
 *.[lL][oO][gG]
 *.[zZ][iI][pP]
 
+# Explicitly archived project testing artifacts
+!/testing/logs/
+!/testing/logs/**
+!/testing/Deployment.zip
+
 # Local secrets / credentials (none are used today - keep it that way)
 *.pem
 *.key

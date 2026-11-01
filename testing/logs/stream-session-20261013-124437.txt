@@ -1,0 +1,12 @@
+Streaming session: https://www.youtube.com/shorts/YGJPYh713d0
+UE tunnel address: 10.45.0.3   duration: 60s   pacing: 300K/s   (egress IP: 2.107.166.54)
+iteration 1: 0.54 MB in 5s (0.9 Mbit/s)
+iteration 2: 0.54 MB in 4s (1.1 Mbit/s)
+iteration 3: 0.54 MB in 6s (0.7 Mbit/s)
+iteration 4: 0.54 MB in 5s (0.9 Mbit/s)
+iteration 5: 0.54 MB in 5s (0.9 Mbit/s)
+iteration 6: 0.54 MB in 6s (0.7 Mbit/s)
+iteration 7: 0.54 MB in 10s (0.4 Mbit/s)
+iteration 8: 0.54 MB in 8s (0.5 Mbit/s)
+iteration 9: 0.54 MB in 15s (0.3 Mbit/s)
+session done: 9 iteration(s), 4.84 MB streamed through uesimtun0
