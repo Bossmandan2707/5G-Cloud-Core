@@ -1,0 +1,16 @@
+[Unit]
+Description=Open5GS 5G core lab (core pod with fixed IP)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=300
+# Same flags as the tested deployment (03-deploy-core.sh)
+ExecStartPre=/bin/sh -c 'podman network exists podman-default-kube-network || podman network create --subnet 10.89.0.0/24 podman-default-kube-network'
+ExecStart=/usr/bin/podman kube play --replace --network podman-default-kube-network --ip 10.89.0.50 /opt/open5gs/open5gs-pod.yaml
+ExecStop=/usr/bin/podman kube down /opt/open5gs/open5gs-pod.yaml
+
+[Install]
+WantedBy=multi-user.target

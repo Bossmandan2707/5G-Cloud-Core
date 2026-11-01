@@ -1,0 +1,16 @@
+[Unit]
+Description=Open5GS lab UE (UERANSIM, separate network namespace)
+Requires=open5gs.service
+After=open5gs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=300
+# The gNB inside the core pod starts ~20 s after the pod; give the core time to come up.
+ExecStartPre=/bin/sleep 45
+ExecStart=/usr/bin/podman kube play --replace --network podman-default-kube-network /opt/open5gs/ue-pod.yaml
+ExecStop=/usr/bin/podman kube down /opt/open5gs/ue-pod.yaml
+
+[Install]
+WantedBy=multi-user.target

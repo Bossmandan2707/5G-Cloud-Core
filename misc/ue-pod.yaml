@@ -1,0 +1,93 @@
+# UERANSIM UE in its OWN pod (own network namespace).
+#
+# Why: when the UE shared a namespace with the UPF, the UE address (10.45.0.2) was a local
+# address of the UPF's namespace, so traffic returning from the internet over the Gi/N6
+# interface (ogstun) was never delivered through the GTP tunnel. Here the UE reaches the gNB's
+# simulated radio link over the pod network, like a real UE would over the air.
+#
+# Deploy AFTER the core pod, which must have the fixed IP below:
+#   podman kube play --replace --network podman-default-kube-network --ip 10.89.0.50 open5gs-pod.yaml
+#   podman kube play --replace --network podman-default-kube-network ue-pod.yaml
+# (Kubernetes: replace 10.89.0.50 below with the open5gs pod IP - see suse/k3s/20-deploy-core.sh)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ue-config
+data:
+  ue.yaml: |
+    supi: 'imsi-998010000000001'
+    mcc: '998'
+    mnc: '01'
+    protectionScheme: 0
+    homeNetworkPublicKey: '5a8d38864820197c3394b92613b20b91633cbd897119273bf8e4a6f4eec0a650'
+    homeNetworkPublicKeyId: 1
+    routingIndicator: '0000'
+    key: '465B5CE8B199B49FAA5F0A2EE238A6BC'
+    op: 'E8ED289DEBA952E4283B54E88E6183CA'
+    opType: 'OPC'
+    amf: '8000'
+    imei: '356938035643803'
+    imeiSv: '4370816125816151'
+    gnbSearchList:
+      - 10.89.0.50
+    uacAic:
+      mps: false
+      mcs: false
+    uacAcc:
+      normalClass: 0
+      class11: false
+      class12: false
+      class13: false
+      class14: false
+      class15: false
+    sessions:
+      - type: 'IPv4'
+        apn: 'internet'
+        slice:
+          sst: 1
+    configured-nssai:
+      - sst: 1
+    default-nssai:
+      - sst: 1
+    integrity:
+      IA1: true
+      IA2: true
+      IA3: true
+    ciphering:
+      EA1: true
+      EA2: true
+      EA3: true
+    integrityMaxRate:
+      uplink: 'full'
+      downlink: 'full'
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ue
+  labels:
+    app: ue
+spec:
+  containers:
+    - name: ue
+      # needs /dev/net/tun + NET_ADMIN to create uesimtun0, NET_RAW for ping -I
+      image: docker.io/gradiant/ueransim:3.2.6
+      command: ["/bin/sh", "-c", "sleep 5 && exec nr-ue -c /etc/ueransim/ue.yaml"]
+      securityContext:
+        runAsUser: 0
+        # SELinux (enforcing in the Podman VM) blocks container_t from opening tun_tap_device_t
+        seLinuxOptions:
+          type: spc_t
+        capabilities:
+          add: ["NET_ADMIN", "NET_RAW"]
+      volumeMounts:
+        - {name: config, mountPath: /etc/ueransim, readOnly: true}
+        - {name: tun, mountPath: /dev/net/tun}
+  volumes:
+    - name: config
+      configMap:
+        name: ue-config
+    - name: tun
+      hostPath:
+        path: /dev/net/tun
+        type: CharDevice
