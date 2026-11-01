@@ -112,6 +112,51 @@ I run the dashboard regression tests with:
 .venv/bin/python -m unittest discover -s monitoring -p 'test_*.py' -v
 ```
 
+## My final deployment checks
+
+Before presenting the lab, I run:
+
+```bash
+bash suse/99-verify.sh podman
+curl --fail --silent --show-error http://127.0.0.1:8000/api/snapshot
+curl --fail --silent --show-error http://127.0.0.1:8000/api/gtp
+```
+
+The verification script checks network-function registration, the SMF/UPF PFCP association, gNodeB setup, UE registration, PDU-session establishment, and ping/HTTP access through the UE tunnel. I expect every check to report `PASS`.
+
+In the dashboards, I check that:
+
+- The active configuration is IMSI `999050000000001`, MCC `999`, and two-digit MNC `05`.
+- Host and container samples are updating, and GTP capture reports `live`.
+- Uplink and downlink packet counters increase when I generate UE traffic. Zero current throughput is normal when the UE is idle.
+- I distinguish configured subscriber identity from signaling evidence: GTP-U headers alone do not identify an IMSI.
+
+The UE tunnel address is dynamically assigned, so it can change after a reattachment.
+
+### Recovery and subscriber-data protection
+
+If the simulated radio link stalls and the gNodeB reports a stale UE context, I stop any streaming test and recreate only the UE:
+
+```bash
+podman kube play --replace --network podman-default-kube-network ue-pod.yaml
+bash suse/99-verify.sh podman
+```
+
+This interrupts the UE session and removes helpers joined to the UE pod, but leaves the core pod intact.
+
+MongoDB currently has no persistent volume. Stopping a pod is different from deleting or recreating it: before replacing the core pod, I back up the database with `mongodump` and retain a tested restore procedure. I keep database backups and runtime logs local and out of Git. The manifests contain public lab-test subscriber credentials, not production SIM credentials.
+
+### Safe shutdown and deployment scope
+
+I stop the dashboard with **Ctrl+C** when running it in the foreground, or send **SIGTERM** to its verified process when running it in the background. Normal shutdown removes its temporary packet-capture helper. I then stop the lab pods:
+
+```bash
+podman pod stop ue
+podman pod stop open5gs
+```
+
+This is a locally validated demonstration lab, not a production or highly available deployment. The SUSE-specific, systemd, and k3s paths remain untested on SUSE. The dashboard and metrics endpoint stay bound to localhost, and neither a Prometheus server nor Grafana is deployed.
+
 ## What I demonstrated
 
 I demonstrated that my simulated UE could register with the 5G core, establish a PDU session, and reach the internet through the user plane.
