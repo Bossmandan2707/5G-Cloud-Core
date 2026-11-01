@@ -1,0 +1,27 @@
+# Container list excerpt from ../../open5gs-pod.yaml; requires its shared Pod and ConfigMap.
+- name: upf
+  image: docker.io/gradiant/open5gs:2.7.5
+  # root + NET_ADMIN + /dev/net/tun are required to create the ogstun (N6) interface.
+  # upfd creates ogstun but does not address it, so assign the gateway IP and bring it up.
+  command: ["/bin/sh", "-c"]
+  args:
+    - |
+      /opt/open5gs/bin/open5gs-upfd -c /etc/open5gs/upf.yaml &
+      PID=$!
+      trap 'kill $PID' TERM INT
+      for i in $(seq 1 20); do ip link show ogstun >/dev/null 2>&1 && break; sleep 1; done
+      ip addr add 10.45.0.1/16 dev ogstun 2>/dev/null
+      ip link set ogstun up
+      # N6 NAT (ip_forward is enabled by the pod-level sysctl)
+      iptables -t nat -C POSTROUTING -s 10.45.0.0/16 ! -o ogstun -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.45.0.0/16 ! -o ogstun -j MASQUERADE || true
+      wait $PID
+  securityContext:
+    runAsUser: 0
+    # SELinux (enforcing in the Podman VM) blocks container_t from opening tun_tap_device_t
+    seLinuxOptions:
+      type: spc_t
+    capabilities:
+      add: ["NET_ADMIN"]
+  volumeMounts:
+    - {name: config, mountPath: /etc/open5gs, readOnly: true}
+    - {name: tun, mountPath: /dev/net/tun}

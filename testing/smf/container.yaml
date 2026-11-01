@@ -1,0 +1,6 @@
+# Container list excerpt from ../../open5gs-pod.yaml; requires its shared Pod and ConfigMap.
+- name: smf
+  image: docker.io/gradiant/open5gs:2.7.5
+  command: ["/bin/sh", "-c", "sleep 3 && exec /opt/open5gs/bin/open5gs-smfd -c /etc/open5gs/smf.yaml"]
+  volumeMounts:
+    - {name: config, mountPath: /etc/open5gs, readOnly: true}

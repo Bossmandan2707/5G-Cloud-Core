@@ -1,0 +1,16 @@
+# Container list excerpt from ../../open5gs-pod.yaml; requires its shared Pod and ConfigMap.
+- name: gnb
+  image: docker.io/gradiant/ueransim:3.2.6
+  # The UE now lives in its own pod/network namespace (see ue-pod.yaml). The gNB's simulated
+  # radio link (UDP 4997) must therefore listen on this pod's eth0 address instead of loopback;
+  # N2/N3 toward AMF/UPF stay on 127.0.0.1 inside this pod.
+  command: ["/bin/sh", "-c"]
+  args:
+    - |
+      sleep 20
+      LINK=$(ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)
+      sed "s/^linkIp:.*/linkIp: $LINK/" /etc/ueransim/gnb.yaml > /tmp/gnb.yaml
+      echo "gNB radio link on $LINK"
+      exec nr-gnb -c /tmp/gnb.yaml
+  volumeMounts:
+    - {name: config, mountPath: /etc/ueransim, readOnly: true}
