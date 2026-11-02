@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dan Powell Technologies · Interface Map</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a1020;color:#e7eefc}*{box-sizing:border-box}
+body{max-width:1500px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;gap:20px}
+h1{font-size:28px;margin:6px 0}h2{font-size:18px;margin:0 0 12px}p,.muted{font-size:13px;color:#a1b2cc;line-height:1.65}
+a{color:#66d9dd}.eyebrow{font-size:12px;letter-spacing:2px;color:#66d9dd}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}.tabs a{padding:10px 18px;border:1px solid #283a57;border-radius:8px;text-decoration:none}
+.tabs .active{background:#243a50;color:#fff;border-color:#66d9dd}.panel{background:#121c30;border:1px solid #25344e;padding:20px;border-radius:13px;margin:16px 0}
+.badge{padding:7px 11px;border:1px solid #3c526c;border-radius:14px;font-size:12px;display:inline-block;white-space:nowrap}
+.good{color:#72dfba}.warn{color:#ffc17a}.logical{color:#b6a7ff}.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;margin-bottom:12px}
+.tools{display:flex;align-items:center;gap:16px;flex-wrap:wrap}select{background:#15243c;color:#fff;border:1px solid #3d506c;border-radius:8px;padding:8px}
+.diagram{overflow-x:auto}svg{display:block;width:100%;min-width:800px;height:auto}
+svg .box{fill:#17263f;stroke:#4a6584;stroke-width:1.3}svg .name{font-size:17px;fill:#eaf2ff;font-weight:650}
+svg .ip{font-size:12px;fill:#b9cbe1;font-family:ui-monospace,monospace}svg .state{font-size:11px}
+svg .edge-label{font-size:13px;font-weight:650;fill:#dceaff;paint-order:stroke;stroke:#121c30;stroke-width:6px;stroke-linejoin:round}
+svg path.edge{fill:none;stroke-width:2.2;opacity:.8}svg path.edge:hover{stroke-width:5;opacity:1}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #263651;vertical-align:top}
+th{color:#a8bad6;font-weight:500;white-space:nowrap}td.ip{font-family:ui-monospace,monospace;min-width:170px;overflow-wrap:anywhere;white-space:pre-line}
+td.note{min-width:230px;max-width:430px;color:#a1b2cc;font-size:12px}.devices{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.devices .panel{min-width:0;margin:0}.address{display:block;font-family:ui-monospace,monospace;overflow-wrap:anywhere}
+#errors{color:#ffc17a;white-space:pre-line}.subtle{border-left:3px solid #496186;padding-left:12px}
+@media(max-width:850px){.devices{grid-template-columns:1fr}body{padding:16px}header{align-items:start;flex-direction:column}}
+</style>
+</head>
+<body>
+<header><div><div class="eyebrow">5G CORE · INTERFACE &amp; ADDRESS MAP</div><h1>Dan Powell Technologies</h1></div>
+<span class="badge" id="status">Collecting interface state…</span></header>
+<nav class="tabs" aria-label="Monitoring tabs"><a href="/">Performance</a><a href="/gtp">GTP-U traces</a>
+<a class="active" href="/interfaces" aria-current="page">Interfaces</a><a href="/mdm">UE MDM</a></nav>
+<p>Core functions share a pod network namespace. Their 127.0.0.x addresses are internal loopback service endpoints, not externally reachable hosts.</p>
+<p id="errors" role="status"></p>
+<section class="panel"><div class="tools"><h2>N-interface topology</h2><label for="group">Show:</label>
+<select id="group"><option value="all">All interfaces</option><option value="core">N1 / N2 / N3 / N4</option>
+<option value="sbi">Service-based core</option><option value="path">UE / N6 / uplinks</option><option value="database">Database</option></select></div>
+<div class="legend"><span class="good">● Observed endpoint / established SCTP</span><span class="logical">┄ Logical reference point</span>
+<span class="warn">● Unknown / down / stale / not probed</span></div>
+<div class="diagram"><svg id="map" viewBox="0 0 1200 680" role="img" aria-label="Live 5G N-interface map"></svg></div>
+<p class="subtle">N1 is logical NAS signaling through the gNB, not a direct UE-to-AMF IP socket.
+SBI labels are logical reference points: observed server endpoints do not prove service transactions.
+N3/N4 bindings do not prove GTP-U traffic or PFCP association. Use GTP-U traces and signaling logs to verify these.</p></section>
+<section class="panel"><h2>Both ends of each interface</h2><div class="scroll"><table>
+<thead><tr><th>Interface</th><th>End A / IP</th><th>End B / IP</th><th>Status</th><th>Meaning</th></tr></thead><tbody id="links"></tbody></table></div></section>
+<section class="panel"><h2>All deployed core endpoints</h2>
+<p>SBI, NGAP, PFCP, GTP-U, SMF GTP-C, metrics, radio simulation and MongoDB. Configured addresses are checked against live listeners.</p>
+<div class="scroll"><table><thead><tr><th>Function</th><th>Service</th><th>Address</th><th>Transport</th><th>Status</th><th>Address source</th></tr></thead>
+<tbody id="endpoints"></tbody></table></div></section>
+<div class="devices" id="devices"></div>
+<section class="panel"><h2>Not deployed in this lab</h2><p id="absent">—</p>
+<p>All interfaces means those applicable to this single-AMF, single-SMF, single-UPF lab.
+Kernel UNKNOWN is normal for administratively UP loopback/TUN devices. Route/NAT observations do not prove internet reachability.
+Subscriber authentication data and packet payloads are never shown.</p><p id="updated">Waiting for samples…</p></section>
+<script>
+const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';let data=null,busy=false;
+const pos={AUSF:[230,70],UDM:[620,70],UDR:[1030,70],AMF:[230,265],SMF:[620,265],PCF:[1030,265],
+UE:[85,460],gNB:[350,460],UPF:[620,460],DN:[1030,460],NRF:[420,625],MongoDB:[1030,625]};
+const specs=[
+['N1','M85 424 Q10 265 150 265',65,310],['N2','M350 424 Q350 350 270 301',318,355],
+['N3','M430 460 L540 460',485,449],['N4','M620 301 L620 424',638,365],['N6','M700 460 L950 460',825,449],
+['N7','M700 265 L950 265',825,253],['N8','M300 229 L550 106',435,170],['N10','M620 229 L620 106',642,171],
+['N11','M310 265 L540 265',425,253],['N12','M230 229 L230 106',252,170],['N13','M310 70 L540 70',425,57],
+['N15','M300 301 Q650 400 965 301',810,345],['N35','M700 70 L950 70',825,57],
+['UDR database','M1110 70 Q1185 350 1110 625',1140,360],['PCF database','M1100 301 Q1160 460 1100 589',1120,525]];
+const good=s=>['observed','interface up','established','listening','bound','endpoints observed','endpoint observed','interfaces up','routing ready','route observed','listener observed'].includes(s);
+const color=s=>s==='logical'?'#b6a7ff':good(s)?'#72dfba':'#ffc17a';
+function svg(tag,attrs={},text){const e=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;}
+function diagram(){
+ const map=$('map');map.replaceChildren();const group=$('group').value;
+ for(const [name,path,x,y]of specs){const l=data.links.find(l=>l.name===name);if(!l||(group!=='all'&&l.group!==group))continue;
+  const e=svg('path',{d:path,class:'edge',stroke:color(l.status),'stroke-dasharray':l.group==='sbi'||name==='N1'?'7 5':'none'});
+  e.appendChild(svg('title',{},name+' · '+l.status+' · '+l.note));map.appendChild(e);map.appendChild(svg('text',{x,y,class:'edge-label','text-anchor':'middle'},name));}
+ if(group==='all'||group==='sbi'){for(const name of ['AMF','SMF','AUSF','UDM','UDR','PCF']){
+  const l=data.links.find(l=>l.name==='Nnrf · '+name);if(!l)continue;const[x,y]=pos[name];
+  const e=svg('path',{d:`M${x} ${y+36} Q${x-90} 565 420 589`,class:'edge',stroke:color(l.status),'stroke-dasharray':'3 7'});
+  e.style.opacity='.25';e.appendChild(svg('title',{},l.name+' · '+l.status));map.appendChild(e);}
+  map.appendChild(svg('text',{x:420,y:565,class:'edge-label','text-anchor':'middle'},'Nnrf discovery'));}
+ for(const n of data.nodes){const[x,y]=pos[n.name]||[0,0],g=svg('g');g.appendChild(svg('rect',{x:x-80,y:y-36,width:160,height:72,rx:10,class:'box'}));
+  g.appendChild(svg('text',{x,y:y-12,class:'name','text-anchor':'middle'},n.name==='DN'?'Data network':n.name));
+  g.appendChild(svg('text',{x,y:y+8,class:'ip','text-anchor':'middle'},n.address||'not observed'));
+  const state=svg('text',{x,y:y+25,class:'state','text-anchor':'middle'},n.status);state.style.fill=color(n.status);g.appendChild(state);map.appendChild(g);}
+}
+function cell(row,text,cls){const e=document.createElement('td');e.textContent=text;if(cls)e.className=cls;row.appendChild(e);return e;}
+function badge(row,status){const e=cell(row,''),b=document.createElement('span');b.className='badge '+(status==='logical'?'logical':good(status)?'good':'warn');b.textContent=status;e.appendChild(b);}
+const end=e=>e.component+'\n'+(e.address||'IP not observed')+(e.port?':'+e.port:'');
+function render(){
+ $('status').textContent=data.stale?'Stale / waiting':data.errors.length?'Partial observations':'Live interface observations';
+ $('errors').textContent=data.errors.join('\n');diagram();$('links').replaceChildren();$('endpoints').replaceChildren();$('devices').replaceChildren();
+ const filter=$('group').value;
+ for(const l of data.links.filter(l=>filter==='all'||l.group===filter)){const r=document.createElement('tr');cell(r,l.name);cell(r,end(l.left),'ip');cell(r,end(l.right),'ip');badge(r,l.status);cell(r,l.note,'note');$('links').appendChild(r);}
+ for(const e of data.endpoints){const r=document.createElement('tr');cell(r,e.component);cell(r,e.service);cell(r,(e.address||'not observed')+':'+e.port,'ip');cell(r,e.protocol.toUpperCase());badge(r,e.status);cell(r,e.source);$('endpoints').appendChild(r);}
+ for(const[scope,ns]of Object.entries(data.namespaces)){const panel=document.createElement('section');panel.className='panel';
+  const h=document.createElement('h2');h.textContent=({core:'Shared core pod',ue:'UE pod',vm:'Podman Linux VM',host:'Mac host'})[scope]||scope;panel.appendChild(h);
+  const wrap=document.createElement('div');wrap.className='scroll';const table=document.createElement('table');
+  for(const d of ns.devices||[]){const r=document.createElement('tr');cell(r,d.name);cell(r,data.stale?'stale':d.admin_up?'Admin UP':'Admin DOWN',data.stale?'warn':d.admin_up?'good':'warn');cell(r,'Kernel: '+d.kernel_state);const a=cell(r,'','ip');
+   for(const ip of d.addresses){const item=document.createElement('span');item.className='address';item.textContent=ip;a.appendChild(item);}table.appendChild(r);}
+  if(!(ns.devices||[]).length){const p=document.createElement('p');p.textContent=ns.error||'No devices observed.';panel.appendChild(p);}
+  wrap.appendChild(table);panel.appendChild(wrap);$('devices').appendChild(panel);}
+ $('absent').textContent=data.not_deployed.join(' · ');$('updated').textContent=(data.updated?'Last sample: '+new Date(data.updated*1000).toLocaleTimeString()+'. ':'')+'Updates about every 15 seconds; samples older than 45 seconds are marked stale.';
+}
+async function refresh(){if(busy)return;busy=true;try{const r=await fetch('/api/interfaces',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);data=await r.json();render();}
+ catch(e){$('status').textContent='Disconnected';$('errors').textContent=e.message;if(data){data.stale=true;for(const r of [...data.nodes,...data.links,...data.endpoints])r.status='stale';data.errors=['Connection lost; displayed addresses are cached.'];render();}}finally{busy=false;}}
+$('group').onchange=()=>{if(data)render();};refresh();setInterval(refresh,5000);
+</script></body></html>
