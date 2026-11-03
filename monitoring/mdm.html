@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dan Powell Technologies · UE MDM Telemetry</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a1020;color:#e7eefc}*{box-sizing:border-box}
+body{max-width:1500px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;gap:20px}
+h1{font-size:28px;margin:6px 0}h2{font-size:17px;margin:0 0 14px}p,.muted{font-size:13px;color:#a1b2cc;line-height:1.6}
+a{color:#66d9dd}.eyebrow{font-size:12px;letter-spacing:2px;color:#66d9dd}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}
+.tabs a{padding:10px 18px;border:1px solid #283a57;border-radius:8px;text-decoration:none}.tabs .active{background:#243a50;color:#fff;border-color:#66d9dd}
+.badge{padding:9px 13px;border:1px solid #3c526c;border-radius:16px;font-size:12px}.panel,.card{background:#121c30;border:1px solid #25344e;padding:20px;border-radius:13px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:20px 0}.split{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.value{font-size:28px;font-weight:650;margin:12px 0}.label{font-size:12px;color:#a8bad6}.good{color:#72dfba}.warn{color:#ffc17a}
+canvas{width:100%;height:165px;display:block}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #263651;vertical-align:top}th{color:#a8bad6;font-weight:500;white-space:nowrap}
+td.ip{font-family:ui-monospace,monospace;white-space:pre-line;overflow-wrap:anywhere}.panel>p{margin-bottom:0}
+.kv{display:grid;grid-template-columns:minmax(130px,1fr) 2fr;gap:9px;font-size:13px}.kv strong{color:#a8bad6;font-weight:500}.kv span{overflow-wrap:anywhere}
+#warnings{color:#ffc17a;white-space:pre-line}.wide{margin:16px 0}
+@media(max-width:850px){.grid{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}body{padding:16px}}
+@media(max-width:480px){header{align-items:start;flex-direction:column}.value{font-size:22px}}
+</style></head>
+<body>
+<header><div><div class="eyebrow">UE-POD AGENT · READ-ONLY DEVICE TELEMETRY</div><h1>Dan Powell Technologies</h1></div>
+<span class="badge" id="status">Connecting…</span></header>
+<nav class="tabs" aria-label="Monitoring tabs"><a href="/">Performance</a><a href="/gtp">GTP-U traces</a><a href="/interfaces">Interfaces</a>
+<a class="active" href="/mdm" aria-current="page">UE MDM</a></nav>
+<p>Read-only MDM-style observability for the simulated UERANSIM UE. Agent measurements come from inside the UE pod;
+registration/session state comes from native nr-cli, and UE-container resources come from Podman. This is not mobile-device enrollment or remote control.</p>
+<p id="identity">Configured UE identity: waiting…</p><p id="warnings" role="status"></p>
+<div class="grid">
+<div class="card"><div class="label">AGENT HEARTBEAT</div><div class="value" id="heartbeat">—</div><div class="muted" id="age">—</div></div>
+<div class="card"><div class="label">NATIVE UE REGISTRATION</div><div class="value" id="registration">—</div><div class="muted" id="connection">—</div></div>
+<div class="card"><div class="label">UE TUNNEL</div><div class="value" id="tunnel">—</div><div class="muted" id="tunnelState">—</div></div>
+<div class="card"><div class="label">UE-SOURCE TCP CHECK</div><div class="value" id="probe">—</div><div class="muted" id="probeInfo">Fixed 1.1.1.1:443 · every ~30 seconds</div></div>
+</div>
+<div class="split"><section class="panel"><h2>UE tunnel throughput · shared namespace counters</h2><canvas id="traffic"></canvas>
+<p><span class="good">Receive</span> / <span style="color:#ac9bff">Send</span> · Mbit/s · not solely video payload.</p></section>
+<section class="panel"><h2>Bound TCP probe latency</h2><canvas id="latency"></canvas>
+<p>Milliseconds for a TCP handshake, not radio latency. A probe is skipped if its source route is not the UE tunnel.</p></section></div>
+<div class="split"><section class="panel"><h2>Native device / session context</h2><div class="kv" id="native"></div>
+<p>CM-IDLE can be normal while registered. A tunnel interface alone is not proof of registration or internet access.</p></section>
+<section class="panel"><h2>Resources · separate measurement scopes</h2><div class="kv" id="resources"></div>
+<p>Agent CPU/RSS is not UE-process usage. UE memory/CPU comes from the UERANSIM container, not the Mac or whole VM.</p></section></div>
+<section class="panel wide"><h2>Active / reported PDU sessions</h2><div class="scroll"><table><thead><tr>
+<th>ID</th><th>State</th><th>Type</th><th>DNN / APN</th><th>Assigned IP</th><th>Data pending</th></tr></thead><tbody id="sessions"></tbody></table></div></section>
+<section class="panel wide"><h2>UE-pod interfaces</h2><p>All helpers in the pod share these network counters. First samples and counter resets have no calculated rate.</p>
+<div class="scroll"><table><thead><tr><th>Interface</th><th>Admin state</th><th>IP addresses</th><th>RX / TX bytes</th><th>RX / TX Mbit/s</th><th>RX / TX errors</th><th>RX / TX drops</th></tr></thead>
+<tbody id="interfaces"></tbody></table></div></section>
+<div class="split"><section class="panel"><h2>Route metadata</h2><div class="scroll"><table><thead><tr><th>Destination</th><th>Device</th><th>Gateway</th><th>Table</th></tr></thead><tbody id="routes"></tbody></table></div></section>
+<section class="panel"><h2>Source policy rules</h2><div class="scroll"><table><thead><tr><th>Priority</th><th>Source</th><th>Table</th></tr></thead><tbody id="rules"></tbody></table></div></section></div>
+<section class="panel"><h2>Capabilities and privacy</h2><p id="unsupported"></p>
+<p>The sidecar runs non-root with dropped capabilities and a read-only root filesystem. Its service binds only to pod loopback, without publishing a host port.
+It has no container socket, host filesystem or SIM-authentication configuration mounted. No authentication keys, raw UE logs, GUTI/SUCI, GPS or packet payloads are displayed.</p>
+<p id="updated"></p><p><a href="/metrics">Prometheus-compatible MDM metrics</a> · History is bounded to the latest 120 collected samples and resets with the dashboard.</p></section>
+<script>
+const $=id=>document.getElementById(id);let latest=null,busy=false;
+const show=v=>v===null||v===undefined||v===''?'—':String(v);
+const number=v=>typeof v==='number'&&Number.isFinite(v)?v:null;
+const fmt=(v,n=1)=>number(v)===null?'—':v.toFixed(n);
+const mib=v=>number(v)===null?'—':(v/1048576).toFixed(1)+' MiB';
+const mbps=v=>number(v)===null?'—':(v*8/1e6).toFixed(3);
+function table(id,rows){const body=$(id);body.replaceChildren();for(const values of rows){const r=document.createElement('tr');for(const v of values){const c=document.createElement('td');c.textContent=show(v);r.appendChild(c);}body.appendChild(r);}}
+function kv(id,rows){$(id).replaceChildren();for(const[k,v]of rows){const a=document.createElement('strong'),b=document.createElement('span');a.textContent=k;b.textContent=show(v);$(id).append(a,b);}}
+function chart(id,rows,series){
+ const canvas=$(id),r=canvas.getBoundingClientRect(),d=devicePixelRatio||1;canvas.width=r.width*d;canvas.height=r.height*d;
+ const c=canvas.getContext('2d');c.scale(d,d);const w=r.width,h=r.height,p=10;
+ const values=rows.flatMap(row=>series.map(([key,_,scale])=>number(row[key])===null?0:row[key]*scale));
+ const max=Math.max(.01,...values)*1.1;c.strokeStyle='#283850';
+ for(let i=0;i<5;i++){const y=p+i*(h-2*p)/4;c.beginPath();c.moveTo(p,y);c.lineTo(w-p,y);c.stroke();}
+ for(const[key,color,scale]of series){c.strokeStyle=color;c.lineWidth=2;c.beginPath();let drawing=false;
+  rows.forEach((row,i)=>{if(number(row[key])===null){drawing=false;return;}const x=p+i/Math.max(rows.length-1,1)*(w-2*p),y=h-p-row[key]*scale/max*(h-2*p);if(drawing)c.lineTo(x,y);else c.moveTo(x,y);drawing=true;});c.stroke();}
+ c.fillStyle='#a1b2cc';c.font='11px system-ui';c.fillText(max.toFixed(2),12,18);
+}
+function render(s){
+ latest=s;const a=s.agent||{},radio=s.native_fresh?s.radio:{},fresh=s.agent_fresh,probe=s.probe_fresh?a.probe||{}:{},t=fresh?a.tunnel||{}:{};
+ const identity=s.identity||{};$('identity').textContent='Configured IMSI '+show(identity.imsi)+' · MCC '+show(identity.mcc)+' / MNC '+show(identity.mnc)+' · identity is configuration context, not read from packet headers.';
+ $('status').textContent=s.stale?'Stale / waiting':fresh&&s.native_fresh?'Live UE telemetry':'Partial / unavailable';
+ $('warnings').textContent=[...(s.errors||[]),...(s.warnings||[])].join('\n');
+ $('heartbeat').textContent=fresh?'Online':'Unavailable / stale';$('heartbeat').className='value '+(fresh?'good':'warn');
+ $('age').textContent='Agent sample age: '+fmt(a.sample_age_seconds)+'s · uptime '+fmt(a.uptime_seconds,0)+'s';
+ $('registration').textContent=show(radio['rm-state']);$('registration').className='value '+(radio['rm-state']==='RM-REGISTERED'?'good':'warn');
+ $('connection').textContent=show(radio['cm-state'])+' · '+show(radio['mm-state']);
+ $('tunnel').textContent=show(t.ip);$('tunnelState').textContent=show(t.name)+' · '+(fresh?(t.admin_up?'Admin UP':'Down / missing'):'unknown');
+ $('probe').textContent=probe.up===true?fmt(probe.latency_ms)+' ms':probe.up===false?'Failed':'Not measured';
+ $('probeInfo').textContent=show(probe.reason)+' Source '+show(probe.source_ip)+' · route verified: '+show(probe.route_verified);
+ kv('native',[['Connection mode',radio['cm-state']],['Mobility state',radio['mm-state']],['Selected PLMN',radio['selected-plmn']],['Current PLMN',radio['current-plmn']],['TAC',radio['current-tac']],['SIM present',radio['sim-inserted']]]);
+ const resources=s.stale?{}:s.resources||{},self=fresh?a.agent_resources||{}:{};
+ kv('resources',[['UE-container CPU',fmt(resources.cpu_percent)+'%'],['UE memory used / limit',resources.memory_usage],['UE memory percentage',fmt(resources.memory_percent)+'%'],['UE process count',resources.pids],
+ ['Agent-process CPU',fmt(self.cpu_percent)+'%'],['Agent RSS',mib(self.rss_bytes)],['Agent cgroup memory',mib(self.cgroup_memory_bytes)],['Agent memory limit',mib(self.cgroup_memory_limit_bytes)]]);
+ table('sessions',(s.native_fresh?s.sessions:[]).map(r=>[r.id,r.state,r['session-type'],r.apn,r.address,r['data-pending']]));
+ table('interfaces',(fresh?a.interfaces||[]:[]).map(r=>[r.name,r.admin_up?'UP':'DOWN',r.addresses.join('\n'),show(r.counters.rx_bytes)+' / '+show(r.counters.tx_bytes),
+ mbps(r.rates.rx_bps)+' / '+mbps(r.rates.tx_bps)+(r.rates.counter_reset?' (reset)':''),show(r.counters.rx_errors)+' / '+show(r.counters.tx_errors),show(r.counters.rx_dropped)+' / '+show(r.counters.tx_dropped)]));
+ table('routes',(fresh?a.routes||[]:[]).map(r=>[r.dst,r.dev,r.gateway,r.table||'main']));
+ table('rules',(fresh?a.rules||[]:[]).map(r=>[r.priority,r.src,r.table]));
+ chart('traffic',s.history||[],[['rx_bps','#72dfba',8/1e6],['tx_bps','#ac9bff',8/1e6]]);
+ chart('latency',s.history||[],[['latency_ms','#66d9dd',1]]);
+ $('unsupported').textContent='Not available in this simulated UE: '+(s.unsupported||[]).join(' · ');
+ $('updated').textContent='Agent samples ~5s; native UE/container collection ~10s plus collection time; TCP probe ~30s. Last collection: '+(s.updated?new Date(s.updated*1000).toLocaleTimeString():'waiting');
+}
+async function refresh(){if(busy)return;busy=true;try{const r=await fetch('/api/mdm',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);render(await r.json());}
+ catch(e){if(latest)render({...latest,stale:true,agent_fresh:false,native_fresh:false,errors:['Connection lost; history is cached.']});else $('warnings').textContent=e.message;$('status').textContent='Disconnected';}finally{busy=false;}}
+window.addEventListener('resize',()=>{if(latest)render(latest);});refresh();setInterval(refresh,3000);
+</script></body></html>

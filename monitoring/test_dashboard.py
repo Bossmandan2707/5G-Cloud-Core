@@ -63,6 +63,37 @@ class DashboardTests(unittest.TestCase):
             self.assertIn(b"<h1>Dan Powell Technologies</h1>", html)
             self.assertEqual(response.headers["Cache-Control"], "no-store")
 
+    def test_mdm_page(self):
+        with urllib.request.urlopen(self.base + "/mdm") as response:
+            html = response.read()
+            self.assertIn(b"UE MDM", html)
+            self.assertIn(b"AGENT HEARTBEAT", html)
+            self.assertIn(b"read-only", html)
+
+    def test_mdm_api_and_metrics(self):
+        with urllib.request.urlopen(self.base + "/api/mdm") as response:
+            data = json.load(response)
+            self.assertIn("agent_fresh", data)
+            self.assertIn("native_fresh", data)
+            self.assertIn("history", data)
+        with urllib.request.urlopen(self.base + "/metrics") as response:
+            self.assertIn(b"ue_mdm_agent_up", response.read())
+
+    def test_interfaces_page(self):
+        with urllib.request.urlopen(self.base + "/interfaces") as response:
+            html = response.read()
+            self.assertIn(b"Dan Powell Technologies", html)
+            self.assertIn(b"N-interface topology", html)
+            self.assertIn(b'aria-current="page">Interfaces', html)
+
+    def test_interfaces_api(self):
+        with urllib.request.urlopen(self.base + "/api/interfaces") as response:
+            data = json.load(response)
+            self.assertIn("links", data)
+            self.assertIn("endpoints", data)
+            self.assertIn("stale", data)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+
     def test_snapshot(self):
         with urllib.request.urlopen(self.base + "/api/snapshot") as response:
             snapshot = json.load(response)

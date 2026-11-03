@@ -15,6 +15,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 import app as exporter
 from gtp_trace import GtpCapture, TraceBuffer
+from interfaces import InterfaceMonitor
+from mdm import MdmMonitor
 
 
 LOCK = threading.Lock()
@@ -26,6 +28,10 @@ if not PODMAN and Path("/opt/podman/bin/podman").is_file():
 HTML = Path(__file__).with_name("dashboard.html").read_bytes()
 GTP_HTML = Path(__file__).with_name("gtp.html").read_bytes()
 TRACE = TraceBuffer()
+INTERFACES_HTML = Path(__file__).with_name("interfaces.html").read_bytes()
+INTERFACES = InterfaceMonitor(PODMAN)
+MDM_HTML = Path(__file__).with_name("mdm.html").read_bytes()
+MDM = MdmMonitor(PODMAN)
 
 
 def sample_host():
@@ -84,7 +90,7 @@ def sample_containers():
             rows = []
             for line in listing.splitlines():
                 name, state, status = line.split("\t", 2)
-                if not (name.startswith("open5gs-") or name in ("ue-ue", "ue-yt", "py-monitor")):
+                if not (name.startswith("open5gs-") or name in ("ue-ue", "ue-yt", "ue-mdm", "py-monitor")):
                     continue
                 if name.endswith("-infra"):
                     continue
@@ -113,12 +119,22 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/gtp":
             body = json.dumps(TRACE.snapshot(), allow_nan=False).encode()
             content_type = "application/json"
+        elif path == "/interfaces":
+            body, content_type = INTERFACES_HTML, "text/html; charset=utf-8"
+        elif path == "/api/interfaces":
+            body = json.dumps(INTERFACES.snapshot(), allow_nan=False).encode()
+            content_type = "application/json"
+        elif path == "/mdm":
+            body, content_type = MDM_HTML, "text/html; charset=utf-8"
+        elif path == "/api/mdm":
+            body = json.dumps(MDM.snapshot(), allow_nan=False).encode()
+            content_type = "application/json"
         elif path == "/api/snapshot":
             with LOCK:
                 body = json.dumps(STATE, allow_nan=False).encode()
             content_type = "application/json"
         elif path == "/metrics":
-            body, content_type = generate_latest(), CONTENT_TYPE_LATEST
+            body, content_type = generate_latest() + MDM.render_metrics(), CONTENT_TYPE_LATEST
         else:
             self.send_error(404)
             return
@@ -150,12 +166,16 @@ def main():
     print(f"{exporter.LAB_NAME} dashboard: http://127.0.0.1:{args.port}", flush=True)
     try:
         capture.start()
+        INTERFACES.start()
+        MDM.start()
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
         capture.close()
+        INTERFACES.close()
+        MDM.close()
 
 
 if __name__ == "__main__":
