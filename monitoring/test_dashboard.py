@@ -102,6 +102,15 @@ class DashboardTests(unittest.TestCase):
             self.assertIsInstance(snapshot["containers"], list)
             self.assertEqual(response.headers["Content-Type"], "application/json")
 
+    def test_ims_page_and_readiness_api(self):
+        with urllib.request.urlopen(self.base + "/ims") as response:
+            self.assertIn(b"VoNR acceptance gates", response.read())
+        with urllib.request.urlopen(self.base + "/api/ims") as response:
+            data = json.load(response)
+            self.assertIn("verification", data)
+            self.assertIn("services", data)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+
     def test_metrics(self):
         with urllib.request.urlopen(self.base + "/metrics") as response:
             metrics = response.read()

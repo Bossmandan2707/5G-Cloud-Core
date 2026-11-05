@@ -104,6 +104,7 @@ podman build -t gtpu-mon:0.1 tools/gtpu-mon
 - Live GTP-U traces: http://127.0.0.1:8000/gtp
 - Core interface map: http://127.0.0.1:8000/interfaces
 - UE MDM telemetry: http://127.0.0.1:8000/mdm
+- IMS / VoNR readiness: http://127.0.0.1:8000/ims
 - Prometheus-format metrics: http://127.0.0.1:8000/metrics
 
 The dashboard binds to localhost only. It uses port 8000, so I do not run the legacy `py-monitor` exporter on that port at the same time. The capture helper is removed when the dashboard shuts down normally. Packet history is bounded and kept in memory, not saved as a packet archive.
@@ -160,6 +161,12 @@ The probe generates a small amount of real UE traffic and can wake an idle UE co
 Battery, GPS, physical RF signal measurements, mobile-OS compliance and remote control are unsupported by this simulated device. The dashboard does not fabricate them, and it does not expose GUTI/SUCI, authentication keys, raw UE logs or packet payloads. Stale/missing agent and native-state data are shown separately.
 
 If I change the configured IMSI, I also update the sidecar's `UE_MDM_IMSI` environment metadata. The dashboard warns on an identity mismatch. The SUSE Podman deployment script builds the sidecar image if absent; k3s requires the image to be built/imported into the node's image store separately and remains untested here.
+
+## My mobile IMS / VoNR preparation
+
+**[Read my IMS project README: what I wanted, what is prepared, and what still needs validation](ims/README.md).**
+
+I prepared a pinned Kamailio/PyHSS IMS-only bundle, a separate opt-in core integration overlay, and an IMS monitoring tab. The running internet core is unchanged. IMS containers, IMS-AKA registration, N5/voice QoS, media and real handset VoNR have **not** been activated or verified. The dashboard reports those limits explicitly.
 
 ## My final deployment checks
 

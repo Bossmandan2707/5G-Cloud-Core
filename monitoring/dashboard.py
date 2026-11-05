@@ -17,6 +17,7 @@ import app as exporter
 from gtp_trace import GtpCapture, TraceBuffer
 from interfaces import InterfaceMonitor
 from mdm import MdmMonitor
+from ims_monitor import ImsMonitor
 
 
 LOCK = threading.Lock()
@@ -32,6 +33,8 @@ INTERFACES_HTML = Path(__file__).with_name("interfaces.html").read_bytes()
 INTERFACES = InterfaceMonitor(PODMAN)
 MDM_HTML = Path(__file__).with_name("mdm.html").read_bytes()
 MDM = MdmMonitor(PODMAN)
+IMS_HTML = Path(__file__).with_name("ims.html").read_bytes()
+IMS = ImsMonitor(PODMAN)
 
 
 def sample_host():
@@ -129,6 +132,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/mdm":
             body = json.dumps(MDM.snapshot(), allow_nan=False).encode()
             content_type = "application/json"
+        elif path == "/ims":
+            body, content_type = IMS_HTML, "text/html; charset=utf-8"
+        elif path == "/api/ims":
+            body = json.dumps(IMS.snapshot(), allow_nan=False).encode()
+            content_type = "application/json"
         elif path == "/api/snapshot":
             with LOCK:
                 body = json.dumps(STATE, allow_nan=False).encode()
@@ -168,6 +176,7 @@ def main():
         capture.start()
         INTERFACES.start()
         MDM.start()
+        IMS.start()
         server.serve_forever()
     except KeyboardInterrupt:
         pass
@@ -176,6 +185,7 @@ def main():
         capture.close()
         INTERFACES.close()
         MDM.close()
+        IMS.close()
 
 
 if __name__ == "__main__":
