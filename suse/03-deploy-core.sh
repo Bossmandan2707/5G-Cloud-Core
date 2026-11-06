@@ -21,6 +21,14 @@ SUBNET="${SUBNET:-10.89.0.0/24}"
 CORE_IP="${CORE_IP:-10.89.0.50}"   # must match gnbSearchList in ue-pod.yaml
 for f in "$CORE_SPEC" "$UE_SPEC"; do [ -f "$f" ] || { echo "spec not found: $f"; exit 1; }; done
 
+# The UE manifest includes a least-privilege telemetry sidecar.
+if ! podman image exists localhost/ue-mdm:0.1; then
+  MDM_CONTEXT="${MDM_CONTEXT:-$ROOT/telemetry/ue_mdm}"
+  [ -f "$MDM_CONTEXT/Containerfile" ] || MDM_CONTEXT="$ROOT/../telemetry/ue_mdm"
+  [ -f "$MDM_CONTEXT/Containerfile" ] || { echo "UE telemetry build context not found" >&2; exit 1; }
+  podman build -t localhost/ue-mdm:0.1 "$MDM_CONTEXT"
+fi
+
 echo "==> Pre-flight"
 for m in sctp tun; do lsmod | grep -q "^$m" || { echo "kernel module $m not loaded - run 00-bootstrap-os.sh"; exit 1; }; done
 echo "ip_forward=$(cat /proc/sys/net/ipv4/ip_forward)"

@@ -1,0 +1,24 @@
+{
+  "dnn": "ims",
+  "signaling_5qi": 5,
+  "voice_pcc_rule": {
+    "qos": {
+      "index": 1,
+      "arp": {
+        "priority_level": 2,
+        "pre_emption_capability": 1,
+        "pre_emption_vulnerability": 2
+      },
+      "mbr": {
+        "uplink": {"value": 128, "unit": 1},
+        "downlink": {"value": 128, "unit": 1}
+      },
+      "gbr": {
+        "uplink": {"value": 128, "unit": 1},
+        "downlink": {"value": 128, "unit": 1}
+      }
+    },
+    "flow": []
+  },
+  "note": "Open5GS QoS index is the 5QI for this 5G session. Empty flow filters are intentional: IMS/N5 must supply actual media flows. This file does not prove an active 5QI 1 QoS flow."
+}

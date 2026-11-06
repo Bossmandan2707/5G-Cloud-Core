@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dan Powell Technologies · IMS / VoNR Readiness</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a1020;color:#e7eefc}*{box-sizing:border-box}
+body{max-width:1450px;padding:28px;margin:auto}h1{font-size:28px;margin:6px 0}h2{font-size:18px;margin:0 0 16px}
+p{color:#a8bad4;font-size:14px;line-height:1.7}a{color:#66d9dd}header{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.eyebrow{color:#66d9dd;letter-spacing:2px;font-size:12px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}
+.tabs a{padding:10px 18px;border:1px solid #283a57;border-radius:8px;text-decoration:none}.tabs .active{border-color:#66d9dd;background:#243a50;color:#fff}
+.panel{background:#121c30;border:1px solid #25344e;border-radius:13px;padding:22px;margin:18px 0}
+.badge{padding:8px 12px;border:1px solid #40516b;border-radius:14px;font-size:12px}.warn{color:#ffc17a}.good{color:#72dfba}
+.nodes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.node{padding:20px;border:1px solid #354d6a;border-radius:10px;background:#17263f}
+.node strong{display:block;margin-bottom:10px}.node code{display:block;font-size:12px;color:#bcd0e8;margin:8px 0}
+.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid #283954}th{color:#a8bad4}
+.path{font-size:16px;line-height:2;color:#dceaff}.checks{display:grid;grid-template-columns:1fr 1fr;gap:14px}.checks div{padding:14px;background:#17263f;border-radius:8px}
+#errors{white-space:pre-line;color:#ffc17a}li{color:#a8bad4;font-size:14px;line-height:1.8}
+@media(max-width:800px){body{padding:16px}.nodes,.checks{grid-template-columns:1fr 1fr}header{align-items:start;flex-direction:column}}
+@media(max-width:480px){.nodes,.checks{grid-template-columns:1fr}}
+</style></head><body>
+<header><div><div class="eyebrow">MOBILE IMS · PREPARATION &amp; READINESS</div><h1>Dan Powell Technologies</h1></div>
+<span class="badge warn" id="status">Collecting IMS inventory…</span></header>
+<nav class="tabs"><a href="/">Performance</a><a href="/gtp">GTP-U traces</a><a href="/interfaces">Interfaces</a><a href="/mdm">UE MDM</a><a class="active" href="/ims" aria-current="page">IMS / VoNR</a></nav>
+<p id="summary">No IMS activation or successful voice call is implied by this page.</p><p id="errors"></p>
+<section class="panel"><h2>Prepared architecture</h2>
+<div class="path">UE IMS DNN → UPF → P-CSCF → I-CSCF / S-CSCF ↔ PyHSS<br>
+P-CSCF → SCP → PCF / BSF (N5 policy path)<br>
+UE media ↔ UPF ↔ userspace RTP relay ↔ called party</div>
+<p id="realm"></p><p id="network"></p>
+<p>Boxes below show planned addresses and separately observed container states. A listener does not prove IMS-AKA registration, a Diameter session, voice QoS or bidirectional audio.</p>
+<div class="nodes" id="nodes"></div></section>
+<section class="panel"><h2>Service inventory</h2><div class="scroll"><table><thead><tr><th>Service</th><th>Configured address</th><th>Container</th><th>Listener observation</th></tr></thead><tbody id="services"></tbody></table></div></section>
+<section class="panel"><h2>Call and subscriber measurements</h2>
+<div class="checks" id="counters"></div><p>Unknown means not measured—not zero. No subscriber keys, raw authentication exchanges or management credentials are displayed.</p></section>
+<section class="panel"><h2>VoNR acceptance gates</h2><div class="checks" id="verification"></div>
+<p>A real VoNR-capable handset and 5G SA radio are required before calling this a handset VoNR deployment. UERANSIM plus a software SIP call is not equivalent.</p>
+<ul id="gates"></ul></section>
+<section class="panel"><h2>Safe activation boundary</h2><p id="memory"></p>
+<p>The active internet core remains separate. The generated core overlay needs a subscriber backup, dual-network review, IMS subscriber provisioning, non-NAT routes and policy/QoS validation before application. This dashboard has no start, stop or provisioning controls.</p>
+<p id="updated"></p></section>
+<script>
+const $=id=>document.getElementById(id);let busy=false,last=null;
+const names={pcscf:'P-CSCF',icscf:'I-CSCF',scscf:'S-CSCF',pyhss:'PyHSS / Redis',mysql:'IMS SQL',dns:'IMS DNS',rtpengine:'RTP relay'};
+function text(tag,value){const e=document.createElement(tag);e.textContent=value;return e;}
+function render(data){
+ last=data;$('status').textContent=data.stale?'Stale inventory':data.prepared?'Prepared · not VoNR-verified':'Configuration only';
+ const progress=data.activation||{};
+ $('summary').textContent='Deployment preparation: '+(data.prepared?'private bundle generated':'not confirmed')+
+ '. Image build: '+(progress.image_build_state||'not observed')+'. Running containers and voice-service acceptance are separate checks.';
+ $('errors').textContent=data.errors.join('\n');$('nodes').replaceChildren();$('services').replaceChildren();
+ $('realm').textContent='SIP host: '+(data.sip_host||data.realm||'unknown')+' · IMS realm: '+(data.realm||'unknown');const n=data.network;
+ $('network').textContent='IMS network '+(n.display_name||data.realm||'—')+' · bridge '+(n.name||'—')+' · '+(n.subnet||'—')+' · IMS UE pool '+(n.ims_ue_subnet||'—');
+ for(const row of data.services){
+  const node=text('div','');node.className='node';node.append(text('strong',names[row.name]||row.name),text('code',row.address+':'+row.port+' / '+row.protocol.toUpperCase()),text('span',row.container_status));$('nodes').appendChild(node);
+  const tr=document.createElement('tr');for(const value of [names[row.name]||row.name,row.address+':'+row.port,row.container_status,row.listener_observed===true?'Bound/listening only':row.listener_observed===false?'Not observed':'Unknown / not sampled'])tr.appendChild(text('td',value));$('services').appendChild(tr);
+ }
+ for(const[id,values]of [['counters',data.counters],['verification',data.verification]]){
+  $(id).replaceChildren();for(const[name,value]of Object.entries(values)){const e=text('div','');e.append(text('strong',name.replaceAll('_',' ')+' — '),text('span',value===null?'Not verified / not measured':String(value)));$(id).appendChild(e);}
+ }
+ $('gates').replaceChildren();for(const gate of data.activation_gates)$('gates').appendChild(text('li',gate));
+ $('memory').textContent='VM configured memory: '+(progress.vm_memory_mib||'not observed')+
+ ' MiB. Minimum gate: '+(data.memory.minimum_mib||'—')+' MiB; recommended: '+(data.memory.recommended_mib||'—')+
+ ' MiB. Subscriber backup: '+(progress.backup_verified?'verified':'not recorded')+
+ '. Existing-core maintenance restart: '+(progress.existing_core_restarted?'completed':'not recorded')+
+ '. These maintenance steps do not prove IMS registration, policy or calls.';
+ $('updated').textContent='Read-only inventory every ~15 seconds. Last sample: '+(data.updated?new Date(data.updated*1000).toLocaleTimeString():'waiting')+'. Observations older than 45 seconds are stale.';
+}
+async function refresh(){if(busy)return;busy=true;try{const r=await fetch('/api/ims',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);render(await r.json());}
+ catch(e){if(last){last.stale=true;last.errors=['Connection lost; displayed configuration is cached.'];for(const s of last.services){s.container_status='stale';s.listener_observed=null;}render(last);}else $('errors').textContent=e.message;}finally{busy=false;}}
+refresh();setInterval(refresh,5000);
+</script></body></html>

@@ -11,12 +11,17 @@ logs/
 !/testing/logs/**
 !/testing/Deployment.zip
 
-# Local secrets / credentials (none are used today - keep it that way)
+# Local secrets / credentials
 *.pem
 *.key
 .env
+*.env
 *.kubeconfig
 kubeconfig*
+# Private packet captures, including tcpdump rotation files
+*.pcap
+*.pcap[0-9]*
+*.pcapng
 
 # Python
 __pycache__/
