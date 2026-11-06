@@ -2,9 +2,12 @@ lab_name: Dan Powell Technologies
 plmn:
   mcc: "999"
   mnc: "05"
-realm: ims.mnc005.mcc999.3gppnetwork.org
+realm: bossman.ims.mnc005.mcc999.3gppnetwork.org
+sip_host: bossman.ims.mnc005.mcc999.3gppnetwork.org
+plmn_realm: ims.mnc005.mcc999.3gppnetwork.org
 network:
   name: dpt-ims
+  display_name: bossman.ims.mnc005.mcc999.3gppnetwork.org
   subnet: 10.90.0.0/24
   gateway: 10.90.0.1
   core_ims_ip: 10.90.0.2

@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import subprocess
 import tarfile
 import tempfile
@@ -34,6 +35,24 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(service["ports"], [])
             self.assertNotIn("amf", service["depends_on"])
         self.assertIn("dpt-userspace.sh", result["services"]["rtpengine"]["entrypoint"][0])
+        self.assertEqual(result["services"]["dns"]["cap_add"], ["NET_ADMIN"])
+
+    def test_dns_startup_installs_required_ims_return_route(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)
+            lab.private_write(source / "dns/dns_init.sh",
+                              "#!/bin/bash\nexec /usr/sbin/named -g -u bind\n")
+            lab.private_write(source / "dns/ims_zone", "$ORIGIN IMS_DOMAIN.\n")
+            lab.private_write(source / "pyhss/config.yaml", "{}\n")
+            lab.harden_reference(source, {
+                "database_password": "database-fixture", "api_key": "api-fixture"})
+            script = source / "dns/dns_init.sh"
+            text = script.read_text()
+            self.assertIn('ip route replace "${UE_IPV4_IMS:?', text)
+            self.assertIn('via "${UPF_IP:?', text)
+            self.assertIn('UPF address required}" || exit 1', text)
+            self.assertLess(text.index("ip route replace"), text.index("exec /usr/sbin/named"))
+            subprocess.run(["bash", "-n", str(script)], check=True, capture_output=True)
 
     def test_core_overlay_preserves_internet_and_adds_ims(self):
         result = lab.core_overlay(self.core, self.config)
@@ -102,7 +121,32 @@ class PreparationTests(unittest.TestCase):
             subprocess.run(["bash", "-n", script.name], check=True, capture_output=True)
 
     def test_realm_pads_two_digit_mnc(self):
-        self.assertEqual(self.config["realm"], "ims.mnc005.mcc999.3gppnetwork.org")
+        self.assertEqual(self.config["plmn_realm"], "ims.mnc005.mcc999.3gppnetwork.org")
+        self.assertEqual(self.config["realm"], "bossman." + self.config["plmn_realm"])
+        self.assertEqual(self.config["sip_host"], self.config["realm"])
+        self.assertEqual(self.config["network"]["display_name"], self.config["realm"])
+
+    def test_subscriber_identities_match_configured_realm(self):
+        subscriber = yaml.safe_load((lab.ROOT / "ims/subscriber.template.yaml").read_text())
+        self.assertEqual(subscriber["realm"], self.config["realm"])
+        self.assertEqual(subscriber["private_identity"],
+                         subscriber["imsi"] + "@" + self.config["realm"])
+        for identity in subscriber["public_identities"]:
+            if identity.startswith("sip:"):
+                self.assertEqual(identity.split("@", 1)[1], self.config["realm"])
+
+    def test_runtime_environment_uses_branded_realm(self):
+        environment = lab.make_environment({}, self.config, {
+            "database_password": "database-fixture", "api_key": "api-fixture"})
+        self.assertEqual(environment["DPT_IMS_REALM"], self.config["realm"])
+        self.assertEqual(environment["NETWORK_NAME"], self.config["realm"])
+
+    def test_qos_template_keeps_voice_flow_filters_unassigned(self):
+        policy = json.loads((lab.ROOT / "ims/qos-policy.json").read_text())
+        self.assertEqual(policy["dnn"], "ims")
+        self.assertEqual(policy["signaling_5qi"], 5)
+        self.assertEqual(policy["voice_pcc_rule"]["qos"]["index"], 1)
+        self.assertEqual(policy["voice_pcc_rule"]["flow"], [])
 
     def test_invalid_address_and_exposure_rejected(self):
         result = lab.compose_bundle(reference_compose(), self.config)

@@ -85,7 +85,7 @@ def make_environment(defaults, config, credentials):
     env = dict(defaults)
     network, services = config["network"], config["services"]
     env.update(MCC=config["plmn"]["mcc"], MNC=config["plmn"]["mnc"],
-               NETWORK_NAME="DanPowellTechnologies", TEST_NETWORK=network["subnet"],
+               NETWORK_NAME=network.get("display_name", config["realm"]), TEST_NETWORK=network["subnet"],
                DOCKER_HOST_IP=network["core_ims_ip"], UPF_IP=network["core_ims_ip"],
                SCP_IP=network["core_ims_ip"], PCF_IP=network["core_ims_ip"],
                UE_IPV4_INTERNET="10.45.0.0/16", UE_IPV4_IMS=network["ims_ue_subnet"],
@@ -96,6 +96,7 @@ def make_environment(defaults, config, credentials):
                PYHSS_BIND_PORT="3868", ICSCF_BIND_PORT="3869",
                SCSCF_BIND_PORT="3870", PCSCF_BIND_PORT="3871",
                REGISTRATION_EXPIRES_ENV="600")
+    env["DPT_IMS_REALM"] = config["realm"]
     for name, service in services.items():
         env[name.upper() + "_IP"] = service["address"]
     env["PCSCF_PUB_IP"] = services["pcscf"]["address"]
@@ -124,6 +125,9 @@ def harden_reference(source, credentials):
     for path in source.rglob("*"):
         if not path.is_file() or path.name in ("LICENSE", ".env"):
             continue
+        if path.name == "Dockerfile":
+            # Build recipes must never contain generated runtime credentials.
+            continue
         try:
             text = path.read_text()
         except UnicodeDecodeError:
@@ -131,12 +135,22 @@ def harden_reference(source, credentials):
         # Public upstream sample DB credentials are replaced only in credential syntax.
         text = text.replace(":heslo@", ":" + password + "@")
         text = re.sub(r"(['\"])(heslo|linux)\1", lambda m: m.group(1) + password + m.group(1), text)
+        text = re.sub(r"(?i)(IDENTIFIED(?:\s+WITH\s+\w+)?\s+BY\s+)(['\"])(.*?)\2",
+                      lambda m: m.group(1) + m.group(2) + password + m.group(2), text)
         text = re.sub(r"--password=(?:linux|heslo)", "", text)
         if path.suffix == ".sh":
             text = text.replace("set -x", "set +x")
+            text = "\n".join(
+                'IMS_DOMAIN="${DPT_IMS_REALM:?IMS realm required}"'
+                if "IMS_DOMAIN=" in line and "IMS_SLASH_DOMAIN=" not in line and not line.lstrip().startswith("#")
+                else line for line in text.splitlines()) + "\n"
+            if path.parent.name == "dns" and "exec /usr/sbin/named" in text:
+                text = text.replace("exec /usr/sbin/named",
+                                    'ip route replace "${UE_IPV4_IMS:?IMS UE subnet required}" via "${UPF_IP:?UPF address required}" || exit 1\n'
+                                    "chmod 0644 /etc/bind/*zone /etc/bind/e164.arpa /etc/bind/named.conf\nexec /usr/sbin/named")
             text = secure_mysql_commands(text)
             text = text.replace("-M 1024", "-M 8")
-            if "mysql " in text:
+            if "mysql " in text and 'export MYSQL_PWD="$IMS_DB_PASSWORD"' not in text:
                 text = text.replace("#!/bin/bash", '#!/bin/bash\nexport MYSQL_PWD="$IMS_DB_PASSWORD"', 1)
         if path.suffix == ".cfg":
             text = re.sub(r"(?m)^children\s*=\s*\d+", "children=2", text)
@@ -157,12 +171,38 @@ def harden_reference(source, credentials):
                 rewrite(item, context + "/" + key_name)
     rewrite(document)
     private_write(hss, yaml.safe_dump(document, sort_keys=False))
+    zone = source / "dns/ims_zone"
+    zone_text = zone.read_text()
+    if "@ IN A PCSCF_IP" not in zone_text:
+        private_write(zone, zone_text.rstrip() + "\n@ IN A PCSCF_IP\n")
     # Replace the kernel-module/modprobe entrypoint with a userspace-only relay.
     relay = """#!/bin/sh
 ip route replace "$UE_IPV4_IMS" via "$UPF_IP" || exit 1
 exec rtpengine --interface="$INTERFACE" --listen-ng="$LISTEN_NG" --listen-cli=127.0.0.1:9901 --table=-1 --port-min=30000 --port-max=30199 --foreground
 """
     private_write(source / "rtpengine/dpt-userspace.sh", relay, True)
+    mysql_init = """#!/bin/bash
+set +x
+: "${IMS_DB_PASSWORD:?Private database credential required}"
+unset MYSQL_PWD
+sed -i 's/127.0.0.1/0.0.0.0/g' /etc/mysql/mysql.conf.d/mysqld.cnf
+usermod -d /var/lib/mysql mysql
+/etc/init.d/mysql start || exit 1
+for i in $(seq 1 30); do
+  mysql --no-defaults --protocol=socket --user=root -e 'SELECT 1' >/dev/null 2>&1 && break
+  sleep 1
+done
+mysql --no-defaults --protocol=socket --user=root <<SQL
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${IMS_DB_PASSWORD}';
+ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${IMS_DB_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+SQL
+[ "$?" -eq 0 ] || exit 1
+mysqladmin --no-defaults --protocol=socket --user=root shutdown || exit 1
+exec /usr/sbin/mysqld --user=mysql --console
+"""
+    private_write(source / "mysql/dpt-mysql-init.sh", mysql_init, True)
 
 
 def compose_bundle(reference, config):
@@ -179,18 +219,20 @@ def compose_bundle(reference, config):
                        privileged=False, mem_limit=limits[name], cpus="1.0", pids_limit=128)
         service.pop("devices", None)
         service.pop("network_mode", None)
-        service["cap_add"] = ["NET_ADMIN", "NET_RAW"] if name == "pcscf" else ["NET_ADMIN"] if name == "rtpengine" else []
+        service["cap_add"] = (["NET_ADMIN", "NET_RAW"] if name == "pcscf"
+                              else ["NET_ADMIN"] if name in ("dns", "rtpengine") else [])
         service["security_opt"] = ["no-new-privileges:true"]
         service["env_file"] = [".env"]
         service["networks"] = {"default": {"ipv4_address": config["services"][name]["address"]}}
         service["depends_on"] = [n for n in service.get("depends_on", []) if n in SERVICES]
         service["image"] = "localhost/dpt-ims-" + ("kamailio" if name in ("pcscf", "icscf", "scscf") else name) + ":39029bee"
-        if name in ("pcscf", "icscf", "scscf"):
-            service["build"] = {"context": "./ims_base"}
+        service["build"] = {"context": "../build/" + ("ims_base" if name in ("pcscf", "icscf", "scscf") else name)}
         service["volumes"] = [v for v in service.get("volumes", [])
                               if not v.startswith("/etc/localtime:")]
         if name == "mysql":
             service["environment"] = {"MYSQL_ROOT_PASSWORD": "${MYSQL_ROOT_PASSWORD}"}
+            service["entrypoint"] = ["/dpt-mysql-init.sh"]
+            service["volumes"].append("./mysql/dpt-mysql-init.sh:/dpt-mysql-init.sh:ro")
         if name == "rtpengine":
             service["entrypoint"] = ["/mnt/rtpengine/dpt-userspace.sh"]
             service["environment"] = {
@@ -274,6 +316,7 @@ def prepare(runtime):
     if source.exists():
         raise ValueError("Runtime source already exists; choose a fresh private runtime directory")
     extract_reference(archive, source, reference["sha256"])
+    extract_reference(archive, runtime / "build", reference["sha256"])
     credentials = {"database_password": secrets.token_hex(24), "api_key": secrets.token_hex(32)}
     config = settings()
     env = make_environment(env_defaults((source / ".env").read_text()), config, credentials)

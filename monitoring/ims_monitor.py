@@ -14,12 +14,14 @@ from interfaces import parse_sockets
 
 ROOT = Path(__file__).resolve().parent.parent
 PREPARATION = Path.home() / ".config/dan-powell-technologies/ims-lab/preparation.json"
+ACTIVATION = PREPARATION.with_name("activation-progress.json")
+BUILD_STATUS = PREPARATION.with_name("image-build-status.json")
 
 
 def topology(path=ROOT / "ims/topology.yaml"):
     value = yaml.safe_load(Path(path).read_text())
-    return {"realm": value["realm"], "network": {
-        key: value["network"][key] for key in ("name", "subnet", "core_ims_ip", "ims_ue_subnet")},
+    return {"realm": value["realm"], "sip_host": value.get("sip_host", value["realm"]), "network": {
+        key: value["network"].get(key) for key in ("name", "display_name", "subnet", "core_ims_ip", "ims_ue_subnet")},
         "services": {name: {key: row[key] for key in ("address", "port", "protocol")}
                      for name, row in value["services"].items()},
         "activation_gates": list(value["activation_gates"]),
@@ -42,7 +44,8 @@ def build_snapshot(config, states, listeners, errors, prepared, now=None):
                      "container_status": status, "listener_observed": bound,
                      "address_source": "prepared topology; not a discovered UE address"})
     return {"updated": time.time() if now is None else now, "stale": False,
-            "prepared": prepared, "realm": config["realm"], "network": config["network"],
+            "prepared": prepared, "realm": config["realm"], "sip_host": config.get("sip_host", config["realm"]),
+            "network": config["network"],
             "services": rows, "errors": errors, "activation_gates": config["activation_gates"],
             "memory": {"minimum_mib": config["minimum_vm_memory_mib"],
                        "recommended_mib": config["recommended_vm_memory_mib"]},
@@ -98,6 +101,19 @@ class ImsMonitor:
         except (OSError, ValueError):
             pass
         data = build_snapshot(config, states, listeners, errors, prepared)
+        data["activation"] = {}
+        try:
+            progress = json.loads(ACTIVATION.read_text())
+            data["activation"] = {key: progress[key] for key in (
+                "vm_memory_mib", "backup_verified", "existing_core_restarted",
+                "imsi", "msisdn", "sip_host") if key in progress}
+        except (OSError, ValueError):
+            pass
+        try:
+            build = json.loads(BUILD_STATUS.read_text())
+            data["activation"]["image_build_state"] = build.get("state", "unknown")
+        except (OSError, ValueError):
+            data["activation"]["image_build_state"] = "not observed"
         with self.lock:
             self.data = data
 

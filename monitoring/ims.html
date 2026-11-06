@@ -43,10 +43,12 @@ const names={pcscf:'P-CSCF',icscf:'I-CSCF',scscf:'S-CSCF',pyhss:'PyHSS / Redis',
 function text(tag,value){const e=document.createElement(tag);e.textContent=value;return e;}
 function render(data){
  last=data;$('status').textContent=data.stale?'Stale inventory':data.prepared?'Prepared · not VoNR-verified':'Configuration only';
- $('summary').textContent='Deployment preparation: '+(data.prepared?'private bundle generated':'not confirmed')+'. Running containers and voice-service acceptance are separate checks.';
+ const progress=data.activation||{};
+ $('summary').textContent='Deployment preparation: '+(data.prepared?'private bundle generated':'not confirmed')+
+ '. Image build: '+(progress.image_build_state||'not observed')+'. Running containers and voice-service acceptance are separate checks.';
  $('errors').textContent=data.errors.join('\n');$('nodes').replaceChildren();$('services').replaceChildren();
- $('realm').textContent='IMS realm: '+(data.realm||'unknown');const n=data.network;
- $('network').textContent='Planned bridge '+(n.name||'—')+' · '+(n.subnet||'—')+' · IMS UE pool '+(n.ims_ue_subnet||'—');
+ $('realm').textContent='SIP host: '+(data.sip_host||data.realm||'unknown')+' · IMS realm: '+(data.realm||'unknown');const n=data.network;
+ $('network').textContent='IMS network '+(n.display_name||data.realm||'—')+' · bridge '+(n.name||'—')+' · '+(n.subnet||'—')+' · IMS UE pool '+(n.ims_ue_subnet||'—');
  for(const row of data.services){
   const node=text('div','');node.className='node';node.append(text('strong',names[row.name]||row.name),text('code',row.address+':'+row.port+' / '+row.protocol.toUpperCase()),text('span',row.container_status));$('nodes').appendChild(node);
   const tr=document.createElement('tr');for(const value of [names[row.name]||row.name,row.address+':'+row.port,row.container_status,row.listener_observed===true?'Bound/listening only':row.listener_observed===false?'Not observed':'Unknown / not sampled'])tr.appendChild(text('td',value));$('services').appendChild(tr);
@@ -55,7 +57,11 @@ function render(data){
   $(id).replaceChildren();for(const[name,value]of Object.entries(values)){const e=text('div','');e.append(text('strong',name.replaceAll('_',' ')+' — '),text('span',value===null?'Not verified / not measured':String(value)));$(id).appendChild(e);}
  }
  $('gates').replaceChildren();for(const gate of data.activation_gates)$('gates').appendChild(text('li',gate));
- $('memory').textContent='Full IMS activation requires a resource review. Minimum gate: '+(data.memory.minimum_mib||'—')+' MiB; recommended: '+(data.memory.recommended_mib||'—')+' MiB. No VM resize or core restart has been performed by preparation.';
+ $('memory').textContent='VM configured memory: '+(progress.vm_memory_mib||'not observed')+
+ ' MiB. Minimum gate: '+(data.memory.minimum_mib||'—')+' MiB; recommended: '+(data.memory.recommended_mib||'—')+
+ ' MiB. Subscriber backup: '+(progress.backup_verified?'verified':'not recorded')+
+ '. Existing-core maintenance restart: '+(progress.existing_core_restarted?'completed':'not recorded')+
+ '. These maintenance steps do not prove IMS registration, policy or calls.';
  $('updated').textContent='Read-only inventory every ~15 seconds. Last sample: '+(data.updated?new Date(data.updated*1000).toLocaleTimeString():'waiting')+'. Observations older than 45 seconds are stale.';
 }
 async function refresh(){if(busy)return;busy=true;try{const r=await fetch('/api/ims',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);render(await r.json());}
