@@ -1,0 +1,12 @@
+--- a/src/modules/ims_ipsec_pcscf/cmd.c
++++ b/src/modules/ims_ipsec_pcscf/cmd.c
+@@ -977,6 +977,9 @@
+ 		}
+ 	}
+ 
++	/* Preserve pending/registered state while installing tunnel metadata. */
++	ci.reg_state = pcontact->reg_state;
++
+ 	if(ul.update_pcontact(d, &ci, pcontact) != 0) {
+ 		LM_ERR("Error updating contact\n");
+ 		goto cleanup;

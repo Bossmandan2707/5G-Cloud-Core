@@ -5,10 +5,13 @@ import platform
 import signal
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import psutil
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest

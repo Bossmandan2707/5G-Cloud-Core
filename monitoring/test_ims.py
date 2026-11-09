@@ -44,6 +44,8 @@ class PreparationTests(unittest.TestCase):
                               "#!/bin/bash\nexec /usr/sbin/named -g -u bind\n")
             lab.private_write(source / "dns/ims_zone", "$ORIGIN IMS_DOMAIN.\n")
             lab.private_write(source / "pyhss/config.yaml", "{}\n")
+            lab.private_write(source / "pcscf/pcscf.cfg",
+                              "#!define WITH_IPSEC\n#!define IPSEC_DELETE_UNUSED_TUNNELS 1\n")
             lab.harden_reference(source, {
                 "database_password": "database-fixture", "api_key": "api-fixture"})
             script = source / "dns/dns_init.sh"
@@ -53,6 +55,9 @@ class PreparationTests(unittest.TestCase):
             self.assertIn('UPF address required}" || exit 1', text)
             self.assertLess(text.index("ip route replace"), text.index("exec /usr/sbin/named"))
             subprocess.run(["bash", "-n", str(script)], check=True, capture_output=True)
+            pcscf = (source / "pcscf/pcscf.cfg").read_text()
+            self.assertIn("#!define WITH_IPSEC\n", pcscf)
+            self.assertIn("#!define IPSEC_DELETE_UNUSED_TUNNELS 1", pcscf)
 
     def test_core_overlay_preserves_internet_and_adds_ims(self):
         result = lab.core_overlay(self.core, self.config)
@@ -194,9 +199,51 @@ class ImsMonitoringTests(unittest.TestCase):
     def test_stale_listener_observation_is_cleared(self):
         monitor = ims_monitor.ImsMonitor(None)
         monitor.data = ims_monitor.build_snapshot(self.config, {"dpt-ims-pcscf": "running"}, {}, [], True, now=100)
+        monitor.data["network_map"]["b2bua"]["outbound_gate"] = "armed"
         data = monitor.snapshot(now=146)
         self.assertTrue(data["stale"])
         self.assertTrue(all(s["container_status"] == "stale" for s in data["services"]))
+        self.assertEqual(data["network_map"]["b2bua"]["outbound_gate"], "stale")
+        self.assertTrue(all(v == "stale" for v in data["network_map"]["states"].values()))
+
+    def test_network_map_preserves_unknown_and_observed_container_states(self):
+        unknown = ims_monitor.network_map(self.config, None)
+        self.assertTrue(all(v == "unknown" for v in unknown["states"].values()))
+        observed = ims_monitor.network_map(self.config, {
+            "open5gs-amf": "running", "dpt-sip-control-test": "exited"})
+        self.assertEqual(observed["states"]["amf"], "running")
+        self.assertEqual(observed["states"]["b2bua"], "exited")
+        self.assertEqual(observed["b2bua"]["outbound_gate"], "unknown")
+        self.assertEqual(observed["interconnect"]["label"], "Telnix Los Angeles Interconnect")
+
+    def test_gateway_gate_parser_does_not_guess_or_accept_ambiguous_values(self):
+        self.assertEqual(ims_monitor.outbound_gate("  DPT_OUTBOUND_ARMED=0\n"), "disarmed")
+        self.assertEqual(ims_monitor.outbound_gate("DPT_OUTBOUND_ARMED=1"), "armed")
+        for value in ("", "DPT_OUTBOUND_ARMED=01", "DPT_OUTBOUND_ARMED=true",
+                      "DPT_OUTBOUND_ARMED=0\nDPT_OUTBOUND_ARMED=1"):
+            self.assertEqual(ims_monitor.outbound_gate(value), "unknown")
+
+    def test_saved_preflight_summary_does_not_expose_private_fields(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "preflight.json"
+            path.write_text(json.dumps({
+                "passed": False, "blocking_component": "P-CSCF registered-contact lookup",
+                "ue_events": ["DPT_REGISTERED protected=true service_routes=1"],
+                "destination": "private-destination-fixture",
+                "password": "private-password-fixture", "trace_folder": "private-path-fixture"}))
+            result = ims_monitor.preflight_summary(path)
+            self.assertTrue(result["protected_registration_observed"])
+            self.assertFalse(result["passed"])
+            self.assertEqual(result["blocker"], "P-CSCF registered-contact lookup")
+            self.assertNotIn("private-", json.dumps(result))
+
+    def test_malformed_saved_preflight_is_not_a_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "preflight.json"
+            for value in ("not json", "[]", '{"passed":"yes","ue_events":null}'):
+                path.write_text(value)
+                result = ims_monitor.preflight_summary(path)
+                self.assertTrue(result is None or result["passed"] is None)
 
     def test_topology_metadata_has_no_credentials(self):
         self.assertEqual(set(self.config["services"]["pyhss"]), {"address", "port", "protocol"})

@@ -155,6 +155,11 @@ def harden_reference(source, credentials):
         if path.suffix == ".cfg":
             text = re.sub(r"(?m)^children\s*=\s*\d+", "children=2", text)
             text = re.sub(r"(?m)^(#!define TCP_PROCESSES)\s+\d+", r"\1 2", text)
+            if path.name == "pcscf.cfg":
+                # With the version-specific state-preservation module fix,
+                # normal per-contact/global cleanup can remain enabled.
+                text = re.sub(r"(?m)^#!define IPSEC_DELETE_UNUSED_TUNNELS\s+\d+",
+                              "#!define IPSEC_DELETE_UNUSED_TUNNELS 1", text)
         private_write(path, text, path.name.endswith(".sh"))
     hss = source / "pyhss/config.yaml"
     document = yaml.safe_load(hss.read_text())

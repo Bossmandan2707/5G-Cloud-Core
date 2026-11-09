@@ -14,15 +14,33 @@ I also wanted the deployment files in GitHub, a clear explanation in my own proj
 |---|---|
 | IMS topology and pinned reference | Configured for the branded PLMN-derived realm |
 | IMS services and databases | Running alongside my existing core |
-| Simulated UE sessions | Internet `10.45.0.2` and IMS `10.46.0.2` active |
-| IMS registration | IMS-AKA and protected REGISTER/200 OK over IPsec verified; the probe deregistered cleanly |
+| Simulated UE sessions | Internet and IMS active; addresses discovered dynamically |
+| IMS registration | Persistent HSS IMS-AKA/IPsec registration, S-CSCF contact and peer SPIs verified |
 | Diameter peers | I-CSCF and S-CSCF connected to the HSS in the new realm |
 | Private IMS DNS | A/SRV queries from `10.46.0.2` verified after a DNS restart |
 | Standalone SIP trunk call | SIPp → Asterisk B2BUA → Telnyx call setup and teardown verified separately |
-| IMS-to-Telnyx call, voice QoS and audio | **Not yet verified end to end** |
+| UE → IMS → B2BUA → Telnyx call signaling | **Answered and cleanly released on 9 November 2026 at 11:58:50 UTC** |
+| Voice QoS and bidirectional audio | **Not verified** |
 | Physical-handset VoNR | **Not verified** |
 
-These are lab observations from 6 November 2026, not a claim that a fresh checkout automatically reproduces the private runtime. My original preparation was non-disruptive; activation later included a VM memory increase and core integration. The realm migration and DNS-route repair described below did **not** restart the core or UE simulator.
+These are lab observations updated on 9 November 2026, not a claim that a fresh checkout automatically reproduces the private runtime. The earlier migration notes below are historical; routine use now follows the fixed commands.
+
+## Routine use — saved working lab
+
+- `network-start` resumes the existing VM/services and registration agent without dialing. It verifies the frozen P-CSCF image/module, refuses unknown replacements, and refreshes the temporary gateway only when confirmed idle.
+- `ue-call --check` performs read-only registration, module, gateway-idle, disarmed-gate and caller-identity checks.
+- `ue-call --trace` places **one real call** to the current private allowlisted destination and prints sanitized UE SIP signaling. No standalone fallback or configuration discovery is used.
+- `ue-call --last-trace` displays the saved call trace **without dialing**.
+- `ue-call --trace --trace-point all` also includes readable CSCF/B2BUA evidence. Provider TLS headers can come from sanitized endpoint logs; this is not TLS/ESP decryption.
+- `ue-call --start --trace` explicitly resumes the lab before placing one call. `--preflight` instead requests a disarmed local signaling test.
+
+The executables are in `tools/` and installed through non-overwriting symlinks in `~/.local/bin`. They select this checkout's `.venv` automatically. Startup uses saved containers, not a fresh Compose/core deployment. An explicit `network-start --repair-ue` is available for a bounded idle radio reconnect; ordinary startup does not restart an already running radio.
+
+The call runner uses an exclusive lock, one-shot gateway arming, a disarm watchdog, bounded UE request expiry, and final cleanup. The caller identity remains `+13238801734`; the lab identity remains `+4599999977`. The destination and authentication stay in private files outside Git. Interrupting requests cleanup; hard process/VM termination cannot guarantee immediate SIP teardown.
+
+The proven UE ladder is **INVITE → 100 → 180 → 183 → 200 → ACK → BYE → 200**. The saved gateway reported ANSWER/cause 16, registration was preserved, and the outbound gate was disarmed.
+
+The owner-only checkpoint is selected by `~/.config/dan-powell-technologies/known-good/current`. It contains the verified patched module, private runtime and database backups, source archive, manifest and successful call evidence. Do not rerun preparation, overwrite credentials or restore a database as part of routine startup. This is a local checkpoint, not an off-machine backup.
 
 ## My architecture
 
@@ -196,6 +214,67 @@ Only after restoring a consistent configuration should I rename/restart the reta
 
 Never run volume-deleting teardown or replay a full-core manifest as a realm rollback. Recheck DNS, Diameter, secure registration and the internet baseline after recovery.
 
+## UE-originated SIP call preparation
+
+The optional private test gateway is now attached at **`10.90.0.24:5060`**, with S-CSCF dispatcher set **1** pointing to it. This is separate from the seven-service IMS preparation bundle. Its configuration permits IMS ingress only from S-CSCF `10.90.0.22/32` and only the destination in the private call profile.
+
+`call_prep.py` validates that profile and renders the gateway configuration without embedding trunk credentials. The gateway includes a separate private `dpt-trunk-auth.conf`. Its default `DPT_OUTBOUND_ARMED=0` rejects calls locally before the provider `Dial` application. A mutex-protected one-shot gate resets itself before any authorized provider Dial; preparation never arms it.
+
+The single-UE adapter reuses the pinned client's IMS-AKA/IPsec registration, registered socket and Service-Route handling. It does not fabricate a second registered subscriber to make the upstream paired-call benchmark dial an external number.
+
+- `call_control.lua` handles the preflight INVITE, provisional replies/PRACK, rejection ACK, CANCEL deadlines and immediate ACK/BYE if a preflight unexpectedly receives an answer.
+- `ue_call.lua` retains registration during that exchange and then deregisters and releases its own SAs.
+- `preflight.py` copies the adapter into the deployed client, reads the current destination privately, verifies the gateway is disarmed, captures evidence and reports success only when the local gateway's blocking marker is actually observed.
+
+For the already-deployed private lab:
+
+```sh
+.venv/bin/python -m ims.preflight
+```
+
+This is a **local signaling test, not a PSTN-call command**. A SIP rejection alone is not a passing preflight: a rejection before the gateway must return a failed result, even when the UE correctly ACKs it. The runner cannot arm provider dialing and prints no private destination or authentication material.
+
+The earlier P-CSCF registered-contact rejection was resolved by the module state-preservation fix below. The persistent registration agent now originates through the real IMS path; the successful external call used neither copied registration nor authentication bypass. Use the fixed CLI above rather than the old one-shot diagnostic for routine calls.
+
+The software controller verifies signaling, not bidirectional RTP, the planned test tone or a dedicated voice QoS flow.
+
+### IPsec association lifecycle checks
+
+The deployed Kamailio development revision `987459` exposed a missing-SA failure: a UE INVITE used ESP SPI `0x1003`, while the P-CSCF had no corresponding SA and counted seven `XfrmInNoStates` packets. SIP registration records alone were therefore insufficient proof that protected requests could pass.
+
+The root cause was `ipsec_create()` passing a zero-initialized `ci.reg_state` into `ul.update_pcontact`, overwriting the contact's pending registration state. The exact deployed revision is `9874599e41fa69cc3807676a7995a135a350a9ba`; the fix sets `ci.reg_state = pcontact->reg_state` before that update. The reproducible source patch is in `patches/kamailio-987459-preserve-contact-state.patch`.
+
+Only the matching module was rebuilt and installed while P-CSCF was stopped. Its SHA-256 is `73430cf9527f96a3aba2c8c888230c7bfb47ea0ff7e79dffc522af9ab30897b5`. Normal `IPSEC_DELETE_UNUSED_TUNNELS=1`, strict registered-contact checks, IMS-AKA and IPsec are enabled. The temporary cleanup-disable workaround is no longer used.
+
+`python -m ims.runtime status` now requires each negotiated SPI to exist on both the UE and P-CSCF, using `ip xfrm state list nokeys`. A single bounded renewal can be requested by `up` when registration appears live but peer SPI installation disagrees. Key values are neither requested nor published. The agent reports SPI/port metadata separately from credential material.
+
+Lease expiry is evaluated against the VM clock, while the heartbeat file must also be freshly received on the host. This prevents a VM clock offset from falsely expiring a current lease, without accepting a stale file. The measured host/VM offset is reported rather than hidden.
+
+Validation progressed from disarmed local INVITEs and peer-SPI checks to the successful UE-originated carrier call. Counter deltas—not an absolute counter reset during restart—were used for XFRM diagnostics. Startup and calls discover current addresses/SPIs instead of relying on values from an earlier session.
+
+### Fresh combined tracing
+
+`trace_call.py` starts bounded captures at the UE, N2/core, P-CSCF, S-CSCF and B2BUA. Originals stay private; collection creates a timestamp-sorted **PCAPNG with a separate named interface per capture point**, rather than losing capture-point identity in one undifferentiated stream. The preflight runner manages this automatically.
+
+For a separate manual diagnostic window:
+
+```sh
+TRACE_SESSION=$(.venv/bin/python -m ims.trace_call start --seconds 90)
+# Run the authorized local diagnostic while capture helpers are alive.
+.venv/bin/python -m ims.trace_call collect "$TRACE_SESSION"
+```
+
+Helpers stop automatically at the time limit; collection exports their files and stops any still running. Each point retains about 10 MB at most through rotation. Captures and diagnostics are owner-only under `~/.config/dan-powell-technologies/traces/`, never Git. A saved `ims-client/latest-preflight-path` points to the latest private report. NGAP heartbeats or encrypted NAS must not be described as decoded call-time N1 signaling or voice-QoS establishment.
+
+Native controller tests use the pinned image's real codecs with fake I/O, so they do not send network messages:
+
+```sh
+podman cp ims/test_call_control.lua dpt-ims-ue-client:/opt/dpt_test_call_control.lua
+podman exec dpt-ims-ue-client lua /opt/dpt_test_call_control.lua
+```
+
+The controller module must already be deployed by the preflight runner. Python gateway/trace regressions are part of the normal monitoring test suite.
+
 ## What my core overlay proposes
 
 The generated overlay:
@@ -233,6 +312,8 @@ The signaling and conversational-voice QoS classes are **5QI 5 and 5QI 1**. [`qo
 ## My monitoring
 
 The new local page is **[IMS / VoNR readiness](http://127.0.0.1:8000/ims)**, with JSON at `/api/ims`.
+
+Its network map places the 5G core alongside IMS and shows the UE/gNodeB, UPF-to-IMS connection, N5 policy path, CSCF/HSS relationships and restricted B2BUA gateway. The outbound side uses my requested **“Telnix Los Angeles Interconnect”** label; this is a diagram label, not a verified carrier point of presence. Links are neutral, without obsolete orange arrows or a static failure X. The map samples containers and gate state separately from the historical successful call. A UE SIP ladder and sanitized initial INVITE are shown below it. It has no arm or dial controls. Narrow screens can scroll the diagram horizontally.
 
 It shows:
 
@@ -284,7 +365,6 @@ I have **not** yet verified:
 
 - Correct IMS DNN/PCO behavior with a real phone.
 - N5 policy authorization and voice QoS creation/removal.
-- A call through UE → IMS CSCFs → B2BUA → Telnyx.
 - Bidirectional RTP/audio and the planned 350-Hz test tone.
 - Real handset VoNR.
 
@@ -300,7 +380,7 @@ A genuine VoNR demonstration requires a compatible 5G SA gNodeB, phone, provisio
 
 For the active IMS stack, stop only the intended IMS services while preserving the SQL volume. Do not use volume-deleting teardown as a recovery shortcut. Roll back core changes, if ever needed, using the saved original manifest, original network attachment and tested subscriber backup—not by blindly replaying a candidate overlay.
 
-This is a private lab, not a carrier service. A Telnyx trunk has been tested separately; IMS-to-trunk routing is still outstanding. There is no verified SMS service, emergency-calling support, lawful-intercept integration or production availability guarantee.
+This is a private lab, not a carrier service. UE-to-IMS-to-Telnyx signaling has succeeded, but audio, dynamic voice QoS and physical-handset VoNR remain unverified. There is no verified SMS service, emergency-calling support, lawful-intercept integration or production availability guarantee.
 
 ## Project files
 
@@ -318,4 +398,4 @@ This is a private lab, not a carrier service. A Telnyx trunk has been tested sep
 - [Kamailio's open-source VoNR demonstration](https://www.kamailio.org/w/2024/04/kamailio-powering-first-live-demo-of-5g-vonr-and-smsonr-with-oss-only/).
 - [Open5GS Dockerized VoLTE tutorial](https://open5gs.org/open5gs/docs/tutorial/03-VoLTE-dockerized/) — related IMS background, not proof this VoNR adaptation works.
 
-**What I achieved here:** a running private IMS lab with a consistent branded realm, verified secure simulated-UE registration and working direct IMS DNS, while keeping the remaining call, media and voice-QoS work clearly separate.
+**What I achieved here:** persistent secure simulated-UE registration, working IMS DNS and an answered UE-to-Telnyx call with clean release, saved as a protected baseline with fixed operational commands. Media, handset and voice-QoS verification remain separate.

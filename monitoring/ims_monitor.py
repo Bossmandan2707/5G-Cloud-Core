@@ -1,6 +1,7 @@
 """Read-only IMS readiness observations; never infer a VoNR call from a listener."""
 import copy
 import json
+import re
 import subprocess
 import threading
 import time
@@ -16,6 +17,68 @@ ROOT = Path(__file__).resolve().parent.parent
 PREPARATION = Path.home() / ".config/dan-powell-technologies/ims-lab/preparation.json"
 ACTIVATION = PREPARATION.with_name("activation-progress.json")
 BUILD_STATUS = PREPARATION.with_name("image-build-status.json")
+CALL_PREPARATION = PREPARATION.parent.parent / "ims-client/call-preparation.json"
+PRIVATE = PREPARATION.parent.parent
+MAP_CONTAINERS = {
+    "ue": "ue-ue", "gnb": "open5gs-gnb", "agent": "dpt-ims-ue-client",
+    **{name: "open5gs-" + name for name in
+       ("amf", "smf", "upf", "pcf", "bsf", "scp", "ausf", "udm", "udr", "nrf")},
+    **{name: "dpt-ims-" + name for name in
+       ("pcscf", "icscf", "scscf", "pyhss", "dns", "rtpengine")},
+    "b2bua": "dpt-sip-control-test",
+}
+
+
+def outbound_gate(text):
+    values = re.findall(r"^\s*DPT_OUTBOUND_ARMED=(\S+)\s*$", text, re.M)
+    if values == ["0"]:
+        return "disarmed"
+    if values == ["1"]:
+        return "armed"
+    return "unknown"
+
+
+def network_map(config, states):
+    return {
+        "states": {key: "unknown" if states is None else states.get(container, "not deployed")
+                   for key, container in MAP_CONTAINERS.items()},
+        "core_ims_address": config["network"]["core_ims_ip"],
+        "ue_pool": config["network"]["ims_ue_subnet"],
+        "b2bua": {"address": "10.90.0.24", "port": 5060, "outbound_gate": "unknown",
+                  "gate_observed_at": None},
+        "interconnect": {
+            "label": "Telnix Los Angeles Interconnect", "provider": "Telnyx",
+            "transport": "SIP / TLS", "port": 5061,
+            "scope": "User-defined diagram label; carrier point of presence not verified.",
+        },
+        "preflight": None, "last_call": None,
+        "scope": "Configured connections, not live link or end-to-end call verification.",
+    }
+
+
+def preflight_summary(path=CALL_PREPARATION):
+    try:
+        if path.stat().st_size > 128 * 1024:
+            return None
+        value = json.loads(path.read_text())
+        if not isinstance(value, dict):
+            return None
+        blocker = value.get("blocking_component")
+        events = value.get("ue_events", [])
+        if not isinstance(events, list):
+            events = []
+        return {
+            "passed": value.get("passed") if type(value.get("passed")) is bool else None,
+            "protected_registration_observed": any(
+                isinstance(line, str) and line.startswith("DPT_REGISTERED protected=true")
+                for line in events),
+            "blocker": ("P-CSCF registered-contact lookup"
+                        if isinstance(blocker, str) and blocker.startswith("P-CSCF") else None),
+            "recorded_at": path.stat().st_mtime,
+            "scope": "Saved preflight report, not a current registration or live call state.",
+        }
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def topology(path=ROOT / "ims/topology.yaml"):
@@ -27,6 +90,49 @@ def topology(path=ROOT / "ims/topology.yaml"):
         "activation_gates": list(value["activation_gates"]),
         "minimum_vm_memory_mib": value["minimum_vm_memory_mib"],
         "recommended_vm_memory_mib": value["recommended_vm_memory_mib"]}
+
+
+def saved_call(private=None):
+    """Read bounded known-location artifacts; never return raw report data."""
+    from ims.sip_trace import messages
+    private = PRIVATE if private is None else Path(private)
+    try:
+        pointer = private / "ims-client/latest-end-to-end-path"
+        if pointer.stat().st_size > 4096:
+            return None
+        folder = Path(pointer.read_text().strip()).resolve()
+        if folder.parent != (private / "traces").resolve():
+            return None
+        path = folder / "end-to-end-result.json"
+        if path.resolve().parent != folder or path.stat().st_size > 128 * 1024:
+            return None
+        value = json.loads(path.read_text())
+        ue = value.get("ue_call") or {}
+        results = value.get("gateway_dial_results") or []
+        answered = any(r.get("status") == "ANSWER" and str(r.get("cause")) == "16"
+                       for r in results if isinstance(r, dict))
+        passed = (ue.get("answered") is True and ue.get("final_status") == 200
+                  and ue.get("release_ok") is True and answered)
+        events = []
+        trace = folder / "sip-trace.json"
+        if trace.exists() and trace.resolve().parent == folder and trace.stat().st_size < 1024 * 1024:
+            raw = json.loads(trace.read_text())
+            for event in raw.get("events", [])[:300]:
+                if event.get("point") != "ue" or not isinstance(event.get("message"), str):
+                    continue
+                events.extend(messages((event["message"] + "\n\n").encode(), "ue"))
+        return {"passed": bool(passed), "recorded_at": path.stat().st_mtime,
+                "answered": ue.get("answered") is True,
+                "final_status": ue.get("final_status") if type(ue.get("final_status")) is int else None,
+                "release_ok": ue.get("release_ok") is True,
+                "gateway_answer": answered,
+                "gateway_disarmed": value.get("gateway_disarmed") is True,
+                "registration_preserved": value.get("registration_preserved") is True,
+                "ue_trace": [{"start_line": e["start_line"], "cseq": e["cseq"],
+                              "message": e["message"]} for e in events],
+                "scope": "Saved UE-to-Telnyx signaling evidence, not a live call or audio measurement."}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
 
 
 def build_snapshot(config, states, listeners, errors, prepared, now=None):
@@ -46,6 +152,7 @@ def build_snapshot(config, states, listeners, errors, prepared, now=None):
     return {"updated": time.time() if now is None else now, "stale": False,
             "prepared": prepared, "realm": config["realm"], "sip_host": config.get("sip_host", config["realm"]),
             "network": config["network"],
+            "network_map": network_map(config, states),
             "services": rows, "errors": errors, "activation_gates": config["activation_gates"],
             "memory": {"minimum_mib": config["minimum_vm_memory_mib"],
                        "recommended_mib": config["recommended_vm_memory_mib"]},
@@ -65,7 +172,8 @@ class ImsMonitor:
         self.thread = None
         self.data = {"updated": None, "stale": True, "prepared": False, "services": [],
                      "errors": ["Waiting for IMS inventory."], "verification": {}, "counters": {},
-                     "activation_gates": [], "memory": {}, "network": {}, "realm": None}
+                     "activation_gates": [], "memory": {}, "network": {}, "realm": None,
+                     "network_map": network_map(topology(), None)}
 
     def command(self, *args):
         if not self.podman:
@@ -101,6 +209,16 @@ class ImsMonitor:
         except (OSError, ValueError):
             pass
         data = build_snapshot(config, states, listeners, errors, prepared)
+        data["network_map"]["preflight"] = preflight_summary()
+        data["network_map"]["last_call"] = saved_call()
+        if states and states.get("dpt-sip-control-test") == "running":
+            try:
+                text = self.command("exec", "dpt-sip-control-test", "asterisk", "-rx",
+                                    "dialplan show globals")
+                data["network_map"]["b2bua"].update(
+                    outbound_gate=outbound_gate(text), gate_observed_at=time.time())
+            except (OSError, subprocess.SubprocessError):
+                data["errors"].append("B2BUA arming state unavailable; no arming-state claim.")
         data["activation"] = {}
         try:
             progress = json.loads(ACTIVATION.read_text())
@@ -126,6 +244,11 @@ class ImsMonitor:
             for row in data["services"]:
                 row["container_status"] = "stale"
                 row["listener_observed"] = None
+            if "network_map" in data:
+                data["network_map"]["states"] = {
+                    key: "stale" for key in data["network_map"]["states"]}
+                data["network_map"]["b2bua"]["outbound_gate"] = "stale"
+                data["network_map"]["b2bua"]["gate_observed_at"] = None
         return data
 
     def run(self):

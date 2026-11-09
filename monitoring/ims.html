@@ -14,13 +14,83 @@ p{color:#a8bad4;font-size:14px;line-height:1.7}a{color:#66d9dd}header{display:fl
 .scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid #283954}th{color:#a8bad4}
 .path{font-size:16px;line-height:2;color:#dceaff}.checks{display:grid;grid-template-columns:1fr 1fr;gap:14px}.checks div{padding:14px;background:#17263f;border-radius:8px}
 #errors{white-space:pre-line;color:#ffc17a}li{color:#a8bad4;font-size:14px;line-height:1.8}
+.map-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}.map-heading h2{margin:0}
+.map-legend{display:flex;gap:20px;flex-wrap:wrap;margin:16px 0;color:#b5c8e2;font-size:12px}.map-key:before{content:"";display:inline-block;width:24px;border-top:2px solid #62cddd;margin-right:8px;vertical-align:middle}
+.map-key.cx:before{border-color:#b7a1ff}
+.map-scroll{overflow-x:auto;border:1px solid #283e5a;border-radius:12px;background:#0c1526}
+.topology{display:block;width:100%;min-width:1160px;height:auto}.topology text{fill:#dce8fb;font-family:system-ui,sans-serif;font-size:13px}
+.topology .map-group{fill:#111e33;stroke:#34516b;stroke-width:1.4}.topology .ims-group{fill:#142039;stroke:#45618b}
+.topology .map-title{fill:#f3f7ff;font-size:20px;font-weight:650}.topology .map-subtitle{fill:#9db3d3;font-size:12px}
+.topology .map-node-box{fill:#192a43;stroke:#4a6281;stroke-width:1.3}.topology .map-node[data-state="running"] .map-node-box{stroke:#64c6a3}
+.topology .map-name{font-size:15px;font-weight:600}.topology .map-ip{font-family:ui-monospace,monospace;font-size:12px;fill:#a9cbe8}
+.topology .map-state{font-size:11px;fill:#a2bad3}.topology .map-link{fill:none;stroke:#62cddd;stroke-width:1.8;marker-end:url(#map-arrow)}
+.topology .map-cx{stroke:#b7a1ff;marker-end:url(#map-arrow-cx)}
+.topology .map-policy{stroke-dasharray:4 4}.topology .map-label{font-size:11px;fill:#a9c7dc}.topology .map-warn{fill:#ffc17a}
+.map-notes{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.map-notes p{margin:0;padding:13px;background:#17263f;border-radius:8px}
+.map-footnote{font-size:12px;overflow-wrap:anywhere}.map-scroll:focus-visible{outline:2px solid #66d9dd;outline-offset:3px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.7;background:#0c1526;padding:16px;border-radius:8px}summary{cursor:pointer;color:#a9cbe8}
 @media(max-width:800px){body{padding:16px}.nodes,.checks{grid-template-columns:1fr 1fr}header{align-items:start;flex-direction:column}}
-@media(max-width:480px){.nodes,.checks{grid-template-columns:1fr}}
+@media(max-width:480px){.nodes,.checks,.map-notes{grid-template-columns:1fr}}
 </style></head><body>
-<header><div><div class="eyebrow">MOBILE IMS · PREPARATION &amp; READINESS</div><h1>Dan Powell Technologies</h1></div>
-<span class="badge warn" id="status">Collecting IMS inventory…</span></header>
+<header><div><div class="eyebrow">MOBILE IMS · SIGNALING &amp; READINESS</div><h1>Dan Powell Technologies</h1></div>
+<span class="badge" id="status">Collecting IMS inventory…</span></header>
 <nav class="tabs"><a href="/">Performance</a><a href="/gtp">GTP-U traces</a><a href="/interfaces">Interfaces</a><a href="/mdm">UE MDM</a><a class="active" href="/ims" aria-current="page">IMS / VoNR</a></nav>
-<p id="summary">No IMS activation or successful voice call is implied by this page.</p><p id="errors"></p>
+<p id="summary">Loading saved call evidence and current service inventory.</p><p id="errors"></p>
+<section class="panel" id="network-map" aria-labelledby="network-map-title">
+<div class="map-heading"><h2 id="network-map-title">5G Core ↔ IMS ↔ B2B Agents</h2><span class="badge" id="map-gateway-status">B2BUA gate: not observed</span></div>
+<div class="map-legend" aria-label="Connection legend"><span class="map-key">Configured signaling path</span><span class="map-key cx">Cx / Diameter</span><span>Call evidence and current gate state shown separately</span></div>
+<div class="map-scroll" tabindex="0" role="region" aria-label="Scrollable network map; swipe horizontally on small screens">
+<svg class="topology" viewBox="0 0 1320 760" role="img" aria-labelledby="topology-title topology-desc">
+<title id="topology-title">Dan Powell Technologies — interconnected 5G core and IMS network</title>
+<desc id="topology-desc">The simulated UE and gNodeB connect to the Open5GS core. The UPF carries IMS signaling to the P-CSCF, while the policy path connects IMS to the core PCF, BSF and SCP. The IMS CSCFs use PyHSS over Diameter and have a configured route to the Asterisk B2BUA. Its outbound side is labelled Telnix Los Angeles Interconnect. Connections show configuration, not verified end-to-end call readiness.</desc>
+<defs>
+<marker id="map-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#62cddd"/></marker>
+<marker id="map-arrow-cx" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#b7a1ff"/></marker>
+</defs>
+<rect class="map-group" x="20" y="180" width="400" height="535" rx="16"/>
+<rect class="map-group ims-group" x="480" y="180" width="400" height="535" rx="16"/>
+<text class="map-title" x="42" y="213">5G CORE</text><text class="map-subtitle" x="165" y="212">Open5GS · shared core pod</text>
+<text class="map-title" x="502" y="213">IMS</text><text class="map-subtitle" x="555" y="212">Private mobile IMS network</text>
+<path class="map-link" d="M205 76H235"/><text class="map-label" x="211" y="57">RRC</text>
+<path class="map-link" d="M325 130V155H130V240"/><text class="map-label" x="37" y="148">N1 NAS carried over N2 / NGAP</text>
+<path class="map-link" d="M395 130H448V412H395"/><text class="map-label" x="427" y="280" transform="rotate(90 427 280)">N3 · GTP-U</text>
+<path class="map-link" d="M210 279H235"/><text class="map-label" x="214" y="265">SBI</text>
+<path class="map-link" d="M315 318V370"/><text class="map-label" x="326" y="348">N4 · PFCP</text>
+<path class="map-link" d="M395 412H500" marker-start="url(#map-arrow)"/><text class="map-label" x="426" y="399">IMS DNN</text>
+<path class="map-link" d="M660 390H678V279H695"/><text class="map-label" x="686" y="343">REGISTER</text>
+<path class="map-link" d="M775 318V370"/><text class="map-label" x="786" y="347">Mw / SIP</text>
+<path class="map-link" d="M660 434H695"/>
+<path class="map-link map-cx" d="M775 458V520"/><text class="map-label" x="788" y="495">Cx</text>
+<path class="map-link map-cx" d="M855 279H869V560H855"/>
+<path class="map-link map-policy" d="M580 458V482H448V546H395"/><text class="map-label" x="462" y="474">N5 · via SCP</text>
+<path class="map-link" d="M855 414H940"/><text class="map-label" x="896" y="400" text-anchor="middle">SIP route</text>
+<path class="map-link" d="M1115 490V590"/><text class="map-label" x="1130" y="535">Outbound SIP / TLS · 5061</text>
+<text class="map-label" id="map-provider-evidence" x="1130" y="557">Saved call evidence below</text>
+<g class="map-node" data-map-node="ue"><rect class="map-node-box" x="20" y="20" width="185" height="110" rx="10"/><text class="map-name" x="36" y="47">Simulated UE</text><text class="map-subtitle" x="36" y="68">UERANSIM + IMS agent</text><text class="map-ip" x="36" y="91" id="map-ue-pool">IMS UE pool: configured</text><text class="map-state" x="36" y="113" id="map-state-ue">Container: unknown</text></g>
+<g class="map-node" data-map-node="gnb"><rect class="map-node-box" x="235" y="20" width="185" height="110" rx="10"/><text class="map-name" x="251" y="47">Simulated gNodeB</text><text class="map-subtitle" x="251" y="70">PLMN 999 / 05 · 5G SA lab</text><text class="map-state" x="251" y="94" id="map-state-gnb">Container: unknown</text><text class="map-state" x="251" y="113" id="map-state-agent">IMS agent: unknown</text></g>
+<g class="map-node" data-map-node="amf"><rect class="map-node-box" x="50" y="240" width="160" height="78" rx="9"/><text class="map-name" x="66" y="268">AMF</text><text class="map-subtitle" x="66" y="288">N1 / N2 · mobility</text><text class="map-state" x="66" y="307" id="map-state-amf">Container: unknown</text></g>
+<g class="map-node" data-map-node="smf"><rect class="map-node-box" x="235" y="240" width="160" height="78" rx="9"/><text class="map-name" x="251" y="268">SMF</text><text class="map-subtitle" x="251" y="288">PDU session control</text><text class="map-state" x="251" y="307" id="map-state-smf">Container: unknown</text></g>
+<g class="map-node" data-map-node="upf"><rect class="map-node-box" x="50" y="370" width="345" height="88" rx="10"/><text class="map-name" x="66" y="397">UPF · user-plane anchor</text><text class="map-ip" x="66" y="420" id="map-core-ip">IMS-side address: configured</text><text class="map-state" x="66" y="444" id="map-state-upf">Container: unknown</text></g>
+<g class="map-node"><rect class="map-node-box" x="50" y="505" width="345" height="82" rx="10"/><text class="map-name" x="66" y="532">PCF / BSF / SCP</text><text class="map-subtitle" x="66" y="554">Policy authorization / binding / service proxy</text><text class="map-state" x="66" y="575" id="map-state-policy">Container states: unknown</text></g>
+<g class="map-node"><rect class="map-node-box" x="50" y="615" width="345" height="68" rx="10"/><text class="map-name" x="66" y="641">AUSF · UDM · UDR · NRF</text><text class="map-state" x="66" y="666" id="map-state-auth">Container states: unknown</text></g>
+<g class="map-node" data-map-node="icscf"><rect class="map-node-box" x="695" y="240" width="160" height="78" rx="9"/><text class="map-name" x="711" y="268">I-CSCF</text><text class="map-ip" x="711" y="288" id="map-ip-icscf">Configured address</text><text class="map-state" x="711" y="307" id="map-state-icscf">Container: unknown</text></g>
+<g class="map-node" data-map-node="pcscf"><rect class="map-node-box" x="500" y="370" width="160" height="88" rx="9"/><text class="map-name" x="516" y="398">P-CSCF</text><text class="map-ip" x="516" y="420" id="map-ip-pcscf">Configured address</text><text class="map-state" x="516" y="444" id="map-state-pcscf">Container: unknown</text></g>
+<g class="map-node" data-map-node="scscf"><rect class="map-node-box" x="695" y="370" width="160" height="88" rx="9"/><text class="map-name" x="711" y="398">S-CSCF</text><text class="map-ip" x="711" y="420" id="map-ip-scscf">Configured address</text><text class="map-state" x="711" y="444" id="map-state-scscf">Container: unknown</text></g>
+<g class="map-node" data-map-node="dns"><rect class="map-node-box" x="500" y="520" width="160" height="80" rx="9"/><text class="map-name" x="516" y="549">IMS DNS</text><text class="map-ip" x="516" y="571" id="map-ip-dns">Configured address</text><text class="map-state" x="516" y="590" id="map-state-dns">Container: unknown</text></g>
+<g class="map-node" data-map-node="pyhss"><rect class="map-node-box" x="695" y="520" width="160" height="80" rx="9"/><text class="map-name" x="711" y="549">PyHSS / Redis</text><text class="map-ip" x="711" y="571" id="map-ip-pyhss">Configured address</text><text class="map-state" x="711" y="590" id="map-state-pyhss">Container: unknown</text></g>
+<g class="map-node" data-map-node="rtpengine"><rect class="map-node-box" x="500" y="625" width="355" height="58" rx="9"/><text class="map-name" x="516" y="650">RTPengine · userspace media relay</text><text class="map-state" x="516" y="672" id="map-state-rtpengine">Container: unknown · media not verified</text></g>
+<g class="map-node" data-map-node="b2bua"><rect class="map-node-box" x="940" y="370" width="350" height="120" rx="12"/><text class="map-title" x="959" y="402">B2B Agents / Asterisk</text><text class="map-subtitle" x="959" y="425">B2BUA · restricted IMS-to-trunk gateway</text><text class="map-ip" x="959" y="448" id="map-gateway-ip">Configured address</text><text class="map-state" x="959" y="475" id="map-state-b2bua">Container: unknown · gate not observed</text></g>
+<g aria-label="Telnix Los Angeles Interconnect"><rect x="940" y="590" width="350" height="105" rx="12" fill="#172940" stroke="#7696ba"/><title>User-defined outbound-side label; carrier point of presence is not verified.</title><text class="map-title" x="959" y="622">Telnix Los Angeles</text><text class="map-title" x="959" y="647">Interconnect</text><text class="map-subtitle" x="959" y="677">Telnyx SIP trunk · external network</text></g>
+<text class="map-subtitle" x="22" y="743">Container states are sampled; connections and addresses are configured topology, not proof of a working call or voice QoS.</text>
+</svg></div>
+<div class="map-notes"><p id="map-preflight">Loading last UE-to-carrier call result.</p><p id="map-gate-note">B2BUA arming state has not been sampled. This map is read-only and has no arm or dial controls.</p></div>
+<p class="map-footnote">“Telnix Los Angeles Interconnect” is your diagram label. The carrier point of presence has not been measured or verified. The N5 and media paths do not establish an active 5QI 1 voice flow.</p>
+</section>
+<section class="panel" aria-labelledby="ue-trace-title"><h2 id="ue-trace-title">SIP trace from UE</h2>
+<p id="ue-trace-scope">Saved sanitized signaling; no authentication headers or SIP bodies. Not TLS/ESP decryption or audio verification.</p>
+<pre id="ue-sip-ladder">Loading saved UE trace…</pre>
+<details><summary>UE initial INVITE — sanitized headers</summary><pre id="ue-sip-invite">Not available.</pre></details>
+<p>CLI: <code>ue-call --last-trace</code> displays the saved trace without dialing. <code>ue-call --trace</code> places one new call and displays its trace.</p></section>
 <section class="panel"><h2>Prepared architecture</h2>
 <div class="path">UE IMS DNN → UPF → P-CSCF → I-CSCF / S-CSCF ↔ PyHSS<br>
 P-CSCF → SCP → PCF / BSF (N5 policy path)<br>
@@ -41,11 +111,35 @@ UE media ↔ UPF ↔ userspace RTP relay ↔ called party</div>
 const $=id=>document.getElementById(id);let busy=false,last=null;
 const names={pcscf:'P-CSCF',icscf:'I-CSCF',scscf:'S-CSCF',pyhss:'PyHSS / Redis',mysql:'IMS SQL',dns:'IMS DNS',rtpengine:'RTP relay'};
 function text(tag,value){const e=document.createElement(tag);e.textContent=value;return e;}
+function renderMap(data){
+ const map=data.network_map||{},states=map.states||{},stale=data.stale;
+ for(const node of document.querySelectorAll('[data-map-node]')){const state=stale?'stale':states[node.dataset.mapNode]||'unknown';node.dataset.state=state;}
+ for(const[name,state]of Object.entries(states)){const e=$('map-state-'+name);if(e)e.textContent=(name==='agent'?'IMS agent: ':'Container: ')+(stale?'stale':state);}
+ for(const name of ['pcscf','icscf','scscf','pyhss','dns']){const row=data.services.find(s=>s.name===name);if(row)$('map-ip-'+name).textContent=row.address+':'+row.port;}
+ $('map-ue-pool').textContent='IMS: '+(map.ue_pool||'not configured');$('map-core-ip').textContent='IMS side: '+(map.core_ims_address||'not configured');
+ for(const[id,group]of [['policy',['pcf','bsf','scp']],['auth',['ausf','udm','udr','nrf']]]){$('map-state-'+id).textContent=stale?'Container states: stale':group.some(name=>!states[name]||states[name]==='unknown')?'Container states: unknown':group.filter(name=>states[name]==='running').length+'/'+group.length+' containers running';}
+ const b=map.b2bua||{},gate=stale?'stale':b.outbound_gate||'unknown';
+ $('map-gateway-status').textContent='B2BUA outbound gate: '+gate.toUpperCase();
+ $('map-gateway-ip').textContent=(b.address||'not configured')+':'+(b.port||'—')+' · configured';
+ $('map-state-b2bua').textContent='Container: '+(stale?'stale':states.b2bua||'unknown')+' · gate '+gate;
+ $('map-gate-note').textContent=(gate==='disarmed'?'Provider dialing is DISARMED.':gate==='armed'?'Provider dialing is ARMED in the gateway.': 'Provider arming state is '+gate+'.')+' This map is read-only: no arm, dial or call controls.'+(b.gate_observed_at&&!stale?' Gate sampled '+new Date(b.gate_observed_at*1000).toLocaleTimeString()+'.':'');
+ const c=map.last_call;
+ $('map-preflight').textContent=c?'Last saved UE → IMS → B2BUA → Telnyx call: '+(c.passed?'ANSWERED · SIP 200 OK · clean BYE release':'not completed')+'. Recorded '+new Date(c.recorded_at*1000).toLocaleString()+'. Registration '+(c.registration_preserved?'preserved':'not confirmed')+'. Historical evidence, not a live call.':'No saved end-to-end call evidence available.';
+ $('map-preflight').className=c&&c.passed?'good':'';
+ $('map-provider-evidence').textContent=c&&c.passed?'Saved call: answered / released':'Saved call evidence below';
+ const events=c&&c.ue_trace||[];
+ $('ue-sip-ladder').textContent=events.length?events.map(e=>'[UE] '+e.start_line+' · CSeq '+e.cseq).join('\n'):'No saved readable UE SIP trace available.';
+ const invite=events.find(e=>e.start_line.startsWith('INVITE '));
+ $('ue-sip-invite').textContent=invite?invite.message:'No saved UE INVITE available.';
+}
 function render(data){
- last=data;$('status').textContent=data.stale?'Stale inventory':data.prepared?'Prepared · not VoNR-verified':'Configuration only';
+ renderMap(data);
+ last=data;const call=data.network_map&&data.network_map.last_call;
+ $('status').textContent=data.stale?'Stale inventory':call&&call.passed?'Saved UE call verified':'IMS service inventory';
+ $('status').className='badge'+(!data.stale&&call&&call.passed?' good':'');
  const progress=data.activation||{};
- $('summary').textContent='Deployment preparation: '+(data.prepared?'private bundle generated':'not confirmed')+
- '. Image build: '+(progress.image_build_state||'not observed')+'. Running containers and voice-service acceptance are separate checks.';
+ $('summary').textContent=(call&&call.passed?'Saved UE-to-Telnyx call signaling succeeded. ':'')+
+ 'Service states are sampled live; the saved call is historical. Bidirectional audio, voice QoS and physical-handset VoNR remain unverified.';
  $('errors').textContent=data.errors.join('\n');$('nodes').replaceChildren();$('services').replaceChildren();
  $('realm').textContent='SIP host: '+(data.sip_host||data.realm||'unknown')+' · IMS realm: '+(data.realm||'unknown');const n=data.network;
  $('network').textContent='IMS network '+(n.display_name||data.realm||'—')+' · bridge '+(n.name||'—')+' · '+(n.subnet||'—')+' · IMS UE pool '+(n.ims_ue_subnet||'—');
