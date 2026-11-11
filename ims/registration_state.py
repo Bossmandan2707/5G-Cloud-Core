@@ -41,7 +41,7 @@ def agent_status(path, now=None):
         if path.stat().st_size > 16384:
             raise ValueError("Oversized status")
         value = json.loads(path.read_text())
-        fields = ("state", "registered", "imsi", "msisdn", "realm", "address",
+        fields = ("state", "registered", "imsi", "msisdn", "realm", "address", "interface",
                   "renewals", "updated_at", "expires_at", "last_registered_at",
                   "next_renewal_at", "msisdn_associated", "protected", "service_routes",
                   "pcscf_server_spi", "pcscf_client_spi", "pcscf_server_port",

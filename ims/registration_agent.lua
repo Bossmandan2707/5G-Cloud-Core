@@ -19,7 +19,6 @@ local state_dir = os.getenv("DPT_REG_STATE") or "/run/dpt-registration"
 local msisdn = assert(os.getenv("IMS_MSISDN"), "lab MSISDN required"):gsub("^%+", "")
 assert(msisdn:match("^%d+$") and #msisdn <= 15, "invalid MSISDN")
 local pcscf = assert(os.getenv("PCSCF_IP"), "P-CSCF required")
-local interface = os.getenv("IMS_UE_IFACE") or "uesimtun1"
 local renewal_limit = tonumber(os.getenv("IMS_RENEW_SECONDS") or "240")
 assert(renewal_limit and renewal_limit >= 10 and renewal_limit <= 300,
        "renewal interval must be 10..300 seconds")
@@ -67,10 +66,22 @@ local function exists(name)
     return false
 end
 publish()
-local address
+local function tunnel_binding()
+    local file = io.open(state_dir .. "/tunnel-binding", "r")
+    if not file then return nil, nil end
+    local value = file:read("*a"); file:close()
+    return value:match("^(uesimtun%d+)\n(%d+%.%d+%.%d+%.%d+)\n$")
+end
+local interface, address
 for _ = 1, 30 do
-    local ok, value = pcall(net.if_addr4, interface)
-    if ok and value and value ~= "" then address = value; break end
+    local selected, expected = tunnel_binding()
+    if selected then
+        local ok, value = pcall(net.if_addr4, selected)
+        if ok and value == expected then
+            interface, address = selected, expected
+            break
+        end
+    end
     if exists("stop") then state.state = "stopped"; publish(); os.exit(0) end
     os.execute("sleep 1")
 end
@@ -78,6 +89,7 @@ if not address then
     state.state = "waiting-for-ims-tunnel"; publish(); os.exit(1)
 end
 state.address = address
+state.interface = interface
 local loop = net.Loop()
 local sub = ue.new(1)
 sub.ue_addr, sub.pcscf = address, pcscf
@@ -216,8 +228,11 @@ end
 local function heartbeat()
     if stopping then return end
     if exists("stop") then return stop("stopped", false) end
+    local selected, expected = tunnel_binding()
     local ok, current = pcall(net.if_addr4, interface)
-    if not ok or current ~= address then return stop("ims-tunnel-changed", true) end
+    if selected ~= interface or expected ~= address or not ok or current ~= address then
+        return stop("ims-tunnel-changed", true)
+    end
     local cancel = io.open(state_dir .. "/call-stop", "r")
     if cancel then
         local request_id = cancel:read("*a"); cancel:close(); os.remove(state_dir .. "/call-stop")
