@@ -168,6 +168,10 @@ If I change the configured IMSI, I also update the sidecar's `UE_MDM_IMSI` envir
 
 I prepared a pinned Kamailio/PyHSS IMS-only bundle, a separate opt-in core integration overlay, and an IMS monitoring tab. The running internet core is unchanged. IMS containers, IMS-AKA registration, N5/voice QoS, media and real handset VoNR have **not** been activated or verified. The dashboard reports those limits explicitly.
 
+## Roaming partner preparation
+
+**[Three UK inbound S8HR planning profile and prerequisites](roaming/README.md).** This is inactive preparation for IMSI identification, S8-C/S8-U and S6a Diameter parameters—not an established roaming agreement or deployed interconnect. It does not change the running 5G/IMS lab or add SEPP.
+
 ## My final deployment checks
 
 Before presenting the lab, I run:
