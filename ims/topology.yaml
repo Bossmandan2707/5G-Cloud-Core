@@ -1,0 +1,34 @@
+lab_name: Dan Powell Technologies
+plmn:
+  mcc: "999"
+  mnc: "05"
+realm: bossman.ims.mnc005.mcc999.3gppnetwork.org
+sip_host: bossman.ims.mnc005.mcc999.3gppnetwork.org
+plmn_realm: ims.mnc005.mcc999.3gppnetwork.org
+network:
+  name: dpt-ims
+  display_name: bossman.ims.mnc005.mcc999.3gppnetwork.org
+  subnet: 10.90.0.0/24
+  gateway: 10.90.0.1
+  core_ims_ip: 10.90.0.2
+  ims_ue_subnet: 10.46.0.0/16
+  ims_ue_gateway: 10.46.0.1
+minimum_vm_memory_mib: 4096
+recommended_vm_memory_mib: 6144
+services:
+  mysql: {address: 10.90.0.10, port: 3306, protocol: tcp}
+  dns: {address: 10.90.0.11, port: 53, protocol: udp}
+  pyhss: {address: 10.90.0.12, port: 3868, protocol: tcp}
+  pcscf: {address: 10.90.0.20, port: 5060, protocol: udp}
+  icscf: {address: 10.90.0.21, port: 4060, protocol: udp}
+  scscf: {address: 10.90.0.22, port: 6060, protocol: udp}
+  rtpengine: {address: 10.90.0.23, port: 2223, protocol: udp}
+activation_gates:
+  - Subscriber backup and reviewed core overlay
+  - IMS network attached to core at 10.90.0.2
+  - SCP/BSF discovery and Open5GS 2.7.5 N5 compatibility
+  - IMS DNN and P-CSCF discovery
+  - IMS subscriber/AKA provisioning from private input
+  - Non-NAT UE-to-IMS routes
+  - IMS signaling and voice QoS setup/teardown
+  - Real gNodeB and handset validation before claiming VoNR
