@@ -21,6 +21,7 @@ from gtp_trace import GtpCapture, TraceBuffer
 from interfaces import InterfaceMonitor
 from mdm import MdmMonitor
 from ims_monitor import ImsMonitor
+from ngap_trace import NgapBuffer, NgapCapture, association_summary
 
 
 LOCK = threading.Lock()
@@ -38,6 +39,8 @@ MDM_HTML = Path(__file__).with_name("mdm.html").read_bytes()
 MDM = MdmMonitor(PODMAN)
 IMS_HTML = Path(__file__).with_name("ims.html").read_bytes()
 IMS = ImsMonitor(PODMAN)
+NGAP_HTML = Path(__file__).with_name("ngap.html").read_bytes()
+NGAP = NgapBuffer()
 
 
 def sample_host():
@@ -125,6 +128,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/gtp":
             body = json.dumps(TRACE.snapshot(), allow_nan=False).encode()
             content_type = "application/json"
+        elif path == "/ngap":
+            body, content_type = NGAP_HTML, "text/html; charset=utf-8"
+        elif path == "/api/ngap":
+            data = NGAP.snapshot()
+            data["association"] = association_summary(INTERFACES.snapshot())
+            body = json.dumps(data, allow_nan=False).encode()
+            content_type = "application/json"
         elif path == "/interfaces":
             body, content_type = INTERFACES_HTML, "text/html; charset=utf-8"
         elif path == "/api/interfaces":
@@ -167,6 +177,7 @@ def main():
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     capture = GtpCapture(PODMAN, TRACE)
+    ngap_capture = NgapCapture(PODMAN, NGAP)
 
     def terminate(_signum, _frame):
         raise KeyboardInterrupt
@@ -177,6 +188,7 @@ def main():
     print(f"{exporter.LAB_NAME} dashboard: http://127.0.0.1:{args.port}", flush=True)
     try:
         capture.start()
+        ngap_capture.start()
         INTERFACES.start()
         MDM.start()
         IMS.start()
@@ -186,6 +198,7 @@ def main():
     finally:
         server.server_close()
         capture.close()
+        ngap_capture.close()
         INTERFACES.close()
         MDM.close()
         IMS.close()

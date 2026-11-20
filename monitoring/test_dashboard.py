@@ -140,6 +140,30 @@ class DashboardTests(unittest.TestCase):
             self.assertIn(b"Dan Powell Technologies", html)
             self.assertIn(b"Real-time packet trace", html)
 
+    def test_ngap_page_and_navigation(self):
+        with urllib.request.urlopen(self.base + "/ngap") as response:
+            html = response.read()
+            self.assertIn(b"NGAP transport monitoring", html)
+            self.assertIn(b'aria-current="page">NGAP transport', html)
+            self.assertIn(b"packets/s", html)
+            self.assertIn(b"No NAS contents", html)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+        for page in ("/", "/gtp", "/interfaces", "/mdm", "/ims"):
+            with urllib.request.urlopen(self.base + page) as response:
+                self.assertIn(b'href="/ngap"', response.read())
+
+    def test_ngap_snapshot(self):
+        with urllib.request.urlopen(self.base + "/api/ngap") as response:
+            data = json.load(response)
+            self.assertIsInstance(data["packets"], list)
+            self.assertEqual(data["buffer_limit"], 500)
+            self.assertEqual(len(data["history"]), 60)
+            self.assertIn("pps", data["rates"]["UL"])
+            self.assertIn("association", data)
+            self.assertNotIn("ue_identity", data)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(response.headers["Content-Type"], "application/json")
+
     def test_gtp_snapshot(self):
         with urllib.request.urlopen(self.base + "/api/gtp") as response:
             data = json.load(response)

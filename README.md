@@ -102,6 +102,7 @@ podman build -t gtpu-mon:0.1 tools/gtpu-mon
 
 - Performance: http://127.0.0.1:8000/
 - Live GTP-U traces: http://127.0.0.1:8000/gtp
+- NGAP transport: http://127.0.0.1:8000/ngap
 - Core interface map: http://127.0.0.1:8000/interfaces
 - UE MDM telemetry: http://127.0.0.1:8000/mdm
 - IMS / VoNR readiness: http://127.0.0.1:8000/ims
@@ -114,6 +115,21 @@ I run the dashboard regression tests with:
 ```bash
 .venv/bin/python -m unittest discover -s monitoring -p 'test_*.py' -v
 ```
+
+### Passive NGAP transport monitoring
+
+With the existing core pod running and the `gtpu-mon:0.1` image built as above, I can monitor N2 SCTP traffic without reconnecting the UE or placing a call:
+
+```bash
+tools/ngap-monitor       # continuous; stop with Ctrl+C
+tools/ngap-monitor 30    # bounded 30-second observation, including startup
+```
+
+The command uses the project virtual environment and an isolated, uniquely named capture helper. It removes only its own helper on normal exit, Ctrl+C or SIGTERM. The dashboard independently captures the same transport at `/ngap`, with JSON at `/api/ngap`; no additional image or package is required.
+
+Both views report gNB → AMF and AMF → gNB SCTP packet metadata on the configured AMF NGAP port (38412 in this lab). The dashboard shows packets/s, bounded recent history, cumulative packet/frame-byte counts, and the separately sampled kernel N2 association state. Frame sizes include the loopback Ethernet header, not just NGAP payload bytes. Other endpoints are classified separately.
+
+This is **NGAP transport monitoring**, not NGAP/NAS decoding: SCTP DATA, acknowledgements and heartbeats are all counted, without retaining payloads, procedure names or subscriber identifiers. An established association does not prove UE registration. Video streaming need not produce NGAP signaling, and idle periods are normal. Capture rotations every 45 seconds can miss packets; this is not a lossless recorder. History and counters reset with the dashboard. Association observations older than 45 seconds are marked stale.
 
 ## My interface map
 

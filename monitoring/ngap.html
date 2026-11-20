@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dan Powell Technologies · NGAP Transport</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a1020;color:#e7eefc}*{box-sizing:border-box}
+body{max-width:1450px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;gap:20px}
+h1{font-size:28px;margin:6px 0}h2{font-size:17px;margin:0 0 14px}p{font-size:14px;color:#a1b2cc;line-height:1.7}
+a{color:#66d9dd}.eyebrow{font-size:12px;letter-spacing:2px;color:#66d9dd}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}
+.tabs a{padding:10px 18px;border:1px solid #283a57;border-radius:8px;text-decoration:none}.tabs .active{background:#243a50;border-color:#66d9dd}
+.badge{padding:9px 13px;border:1px solid #3c526c;border-radius:16px;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:20px 0}
+.panel,.card{background:#121c30;border:1px solid #25344e;padding:20px;border-radius:13px}.panel{margin:16px 0}
+.value{font-size:28px;font-weight:650;margin:12px 0;overflow-wrap:anywhere}.label{font-size:12px;color:#a8bad6}
+.ul{color:#66d9dd}.dl{color:#ac9bff}.other{color:#ffbe75}
+canvas{display:block;width:100%;height:210px}.scroll{overflow:auto;max-height:480px}
+table{border-collapse:collapse;width:100%;font-size:13px;font-family:ui-monospace,monospace}
+th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #263651;white-space:nowrap}
+th{color:#a8bad6;font-weight:500;position:sticky;top:0;background:#121c30}
+select{background:#16243a;color:#e7eefc;border:1px solid #30435f;padding:8px;border-radius:8px}
+@media(max-width:850px){.grid{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){body{padding:16px}header{align-items:start;flex-direction:column}.value{font-size:22px}}
+</style></head>
+<body>
+<header><div><div class="eyebrow">N2 CONTROL PLANE · PASSIVE SCTP METADATA</div><h1>Dan Powell Technologies</h1></div>
+<span class="badge" id="status" role="status">Connecting…</span></header>
+<nav class="tabs" aria-label="Monitoring tabs"><a href="/">Performance</a><a href="/gtp">GTP-U traces</a>
+<a class="active" href="/ngap" aria-current="page">NGAP transport</a><a href="/interfaces">Interfaces</a><a href="/mdm">UE MDM</a><a href="/ims">IMS / VoNR</a></nav>
+<p>NGAP transport monitoring — SCTP packets on the configured AMF N2 port, not decoded NGAP procedures.
+Counts include DATA, acknowledgements and heartbeats. They do not prove UE registration or identify a subscriber.</p>
+<p id="message" role="status">Waiting for live capture…</p>
+<div class="grid">
+<div class="card"><div class="label">gNB → AMF · 5s AVERAGE</div><div class="value ul" id="ulRate">—</div><p id="ulTotal">—</p></div>
+<div class="card"><div class="label">AMF → gNB · 5s AVERAGE</div><div class="value dl" id="dlRate">—</div><p id="dlTotal">—</p></div>
+<div class="card"><div class="label">N2 KERNEL ASSOCIATION</div><div class="value" id="association">Unknown</div><p id="associationTime">Waiting for interface observations</p></div>
+<div class="card"><div class="label">LAST SCTP PACKET</div><div class="value" id="last">—</div><p id="other">—</p></div>
+</div>
+<section class="panel"><h2>N2 SCTP packet rate · last 60 seconds</h2>
+<canvas id="chart" role="img" aria-label="N2 SCTP packets per second over the last 60 seconds"></canvas>
+<p><span class="ul">gNB → AMF</span> · <span class="dl">AMF → gNB</span> · <span class="other">Other endpoints</span>.
+One-second bins; cards show five-second averages. Quiet periods are normal, and video streaming need not produce NGAP signaling.</p></section>
+<section class="panel"><h2>Capture context</h2><p id="endpoints">Reading configured endpoints…</p><p id="scope"></p>
+<p>Association state is sampled independently about every 15 seconds and marked stale after 45 seconds.
+Capture rotates briefly every 45 seconds and is not a lossless packet recorder.
+No NAS contents, procedure names, subscriber correlation or packet archive are exposed.</p></section>
+<section class="panel"><h2>Recent N2 SCTP packet metadata</h2>
+<label for="direction">Direction:</label> <select id="direction"><option value="ALL">All directions</option>
+<option value="UL">gNB → AMF</option><option value="DL">AMF → gNB</option><option value="OTHER">Other endpoints</option></select>
+<p id="rowsInfo">Latest packets appear first</p>
+<div class="scroll"><table><thead><tr><th>#</th><th>UTC time</th><th>Direction</th><th>Source</th><th>Destination</th><th>Frame bytes</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p>Latest 500 packet headers retained in memory. Counters reset with the dashboard. This page polls once per second.
+Terminal: <code>tools/ngap-monitor</code> or <code>tools/ngap-monitor 30</code>. No UE reconnect or call is performed.</p></section>
+<script>
+const $=id=>document.getElementById(id),names={UL:'gNB → AMF',DL:'AMF → gNB',OTHER:'Other'};
+let latest=null,busy=false,disconnected=false;
+function connectionLost(){
+ $('status').textContent='Disconnected';
+ $('message').textContent='Connection lost; displayed packet history and counters are cached.';
+ $('association').textContent='Unknown / disconnected';
+}
+function chart(rows){
+ const canvas=$('chart'),r=canvas.getBoundingClientRect(),d=devicePixelRatio||1;
+ canvas.width=r.width*d;canvas.height=r.height*d;
+ const c=canvas.getContext('2d');c.scale(d,d);
+ const max=Math.max(1,...rows.flatMap(row=>[row.UL,row.DL,row.OTHER]));
+ const ticks=Array.from({length:5},(_,i)=>(max*(1-i/4)).toLocaleString(undefined,{maximumSignificantDigits:3}));
+ c.font='11px system-ui';c.fillStyle='#a1b2cc';
+ const left=Math.max(...ticks.map(t=>c.measureText(t).width))+12,top=26,bottom=r.height-26,right=r.width-12;
+ c.fillText('packets/s',left,12);c.textAlign='right';c.textBaseline='middle';c.strokeStyle='#283850';c.lineWidth=1;
+ for(let i=0;i<5;i++){const y=top+(bottom-top)*i/4;c.beginPath();c.moveTo(left-4,y);c.lineTo(right,y);c.stroke();c.fillText(ticks[i],left-8,y);}
+ c.beginPath();c.moveTo(left,top);c.lineTo(left,bottom);c.stroke();
+ c.textAlign='left';c.fillText('−59s',left,r.height-8);c.textAlign='center';c.fillText('−30s',(left+right)/2,r.height-8);
+ c.textAlign='right';c.fillText('now',right,r.height-8);
+ for(const[key,color]of [['UL','#66d9dd'],['DL','#ac9bff'],['OTHER','#ffbe75']]){
+  c.strokeStyle=color;c.lineWidth=2;c.beginPath();
+  rows.forEach((row,i)=>{const x=left+i/Math.max(rows.length-1,1)*(right-left),y=bottom-row[key]/max*(bottom-top);if(i)c.lineTo(x,y);else c.moveTo(x,y);});c.stroke();
+ }
+}
+function render(data){
+ latest=data;
+ $('status').textContent=data.status==='live'?'N2 capture live':data.status;
+ $('message').textContent=data.message;
+ for(const[d,prefix]of [['UL','ul'],['DL','dl']]){
+  $(prefix+'Rate').textContent=data.rates[d].pps.toFixed(1)+' pkt/s';
+  $(prefix+'Total').textContent=(data.totals[d+'_packets']||0).toLocaleString()+' packets · '+(data.totals[d+'_bytes']||0).toLocaleString()+' frame bytes';
+ }
+ const a=data.association||{};
+ $('association').textContent=a.stale?'Stale':a.status||'Unknown';
+ $('associationTime').textContent=a.updated?'Kernel sample: '+new Date(a.updated*1000).toLocaleTimeString():'No fresh kernel observation';
+ $('last').textContent=data.last_seen?Math.max(0,Math.floor(Date.now()/1000-data.last_seen))+'s ago':'No traffic yet';
+ $('other').textContent=(data.totals.OTHER_packets||0)+' packets from other endpoints';
+ const e=data.endpoints;
+ $('endpoints').textContent=e?'Configured gNB '+e.gnb+' ↔ AMF '+e.amf+':'+e.port+' · core pod loopback':'Configured N2 endpoints unavailable';
+ $('scope').textContent=data.scope;chart(data.history);
+ const rows=data.packets.filter(p=>$('direction').value==='ALL'||p.direction===$('direction').value).slice().reverse();
+ $('rows').replaceChildren();
+ for(const p of rows){
+  const tr=document.createElement('tr');
+  for(const v of [p.id,new Date(p.timestamp*1000).toISOString().slice(11,23),names[p.direction],p.source+':'+p.source_port,p.destination+':'+p.destination_port,p.bytes]){
+   const td=document.createElement('td');td.textContent=String(v);tr.appendChild(td);
+  }
+  $('rows').appendChild(tr);
+ }
+ $('rowsInfo').textContent=rows.length+' headers shown · newest first'+(rows.length?'':' · waiting for SCTP packets');
+ if(disconnected)connectionLost();
+}
+async function refresh(){
+ if(busy)return;busy=true;
+ try{const r=await fetch('/api/ngap',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const data=await r.json();disconnected=false;render(data);}
+ catch(error){disconnected=true;connectionLost();}
+ finally{busy=false;}
+}
+$('direction').onchange=()=>{if(latest)render(latest);};
+window.addEventListener('resize',()=>{if(latest)chart(latest.history);});
+refresh();setInterval(refresh,1000);
+</script></body></html>
