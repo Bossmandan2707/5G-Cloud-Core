@@ -62,15 +62,20 @@ const mib=v=>number(v)===null?'—':(v/1048576).toFixed(1)+' MiB';
 const mbps=v=>number(v)===null?'—':(v*8/1e6).toFixed(3);
 function table(id,rows){const body=$(id);body.replaceChildren();for(const values of rows){const r=document.createElement('tr');for(const v of values){const c=document.createElement('td');c.textContent=show(v);r.appendChild(c);}body.appendChild(r);}}
 function kv(id,rows){$(id).replaceChildren();for(const[k,v]of rows){const a=document.createElement('strong'),b=document.createElement('span');a.textContent=k;b.textContent=show(v);$(id).append(a,b);}}
-function chart(id,rows,series){
+function chart(id,rows,series,unit){
  const canvas=$(id),r=canvas.getBoundingClientRect(),d=devicePixelRatio||1;canvas.width=r.width*d;canvas.height=r.height*d;
- const c=canvas.getContext('2d');c.scale(d,d);const w=r.width,h=r.height,p=10;
+ const c=canvas.getContext('2d');c.scale(d,d);const w=r.width,h=r.height,p=10,top=26;
  const values=rows.flatMap(row=>series.map(([key,_,scale])=>number(row[key])===null?0:row[key]*scale));
- const max=Math.max(.01,...values)*1.1;c.strokeStyle='#283850';
- for(let i=0;i<5;i++){const y=p+i*(h-2*p)/4;c.beginPath();c.moveTo(p,y);c.lineTo(w-p,y);c.stroke();}
+ const max=Math.max(.01,...values)*1.1;
+ const ticks=Array.from({length:5},(_,i)=>(max*(1-i/4)).toLocaleString(undefined,{maximumSignificantDigits:3}));
+ c.font='11px system-ui';c.fillStyle='#a1b2cc';
+ const left=Math.max(...ticks.map(t=>c.measureText(t).width))+12;
+ c.textAlign='left';c.fillText(unit,left,12);c.textAlign='right';c.textBaseline='middle';
+ c.strokeStyle='#283850';c.lineWidth=1;
+ for(let i=0;i<5;i++){const y=top+i*(h-top-p)/4;c.beginPath();c.moveTo(left-4,y);c.lineTo(w-p,y);c.stroke();c.fillText(ticks[i],left-8,y);}
+ c.beginPath();c.moveTo(left,top);c.lineTo(left,h-p);c.stroke();
  for(const[key,color,scale]of series){c.strokeStyle=color;c.lineWidth=2;c.beginPath();let drawing=false;
-  rows.forEach((row,i)=>{if(number(row[key])===null){drawing=false;return;}const x=p+i/Math.max(rows.length-1,1)*(w-2*p),y=h-p-row[key]*scale/max*(h-2*p);if(drawing)c.lineTo(x,y);else c.moveTo(x,y);drawing=true;});c.stroke();}
- c.fillStyle='#a1b2cc';c.font='11px system-ui';c.fillText(max.toFixed(2),12,18);
+  rows.forEach((row,i)=>{if(number(row[key])===null){drawing=false;return;}const x=left+i/Math.max(rows.length-1,1)*(w-left-p),y=h-p-row[key]*scale/max*(h-top-p);if(drawing)c.lineTo(x,y);else c.moveTo(x,y);drawing=true;});c.stroke();}
 }
 function render(s){
  latest=s;const a=s.agent||{},radio=s.native_fresh?s.radio:{},fresh=s.agent_fresh,probe=s.probe_fresh?a.probe||{}:{},t=fresh?a.tunnel||{}:{};
@@ -93,8 +98,8 @@ function render(s){
  mbps(r.rates.rx_bps)+' / '+mbps(r.rates.tx_bps)+(r.rates.counter_reset?' (reset)':''),show(r.counters.rx_errors)+' / '+show(r.counters.tx_errors),show(r.counters.rx_dropped)+' / '+show(r.counters.tx_dropped)]));
  table('routes',(fresh?a.routes||[]:[]).map(r=>[r.dst,r.dev,r.gateway,r.table||'main']));
  table('rules',(fresh?a.rules||[]:[]).map(r=>[r.priority,r.src,r.table]));
- chart('traffic',s.history||[],[['rx_bps','#72dfba',8/1e6],['tx_bps','#ac9bff',8/1e6]]);
- chart('latency',s.history||[],[['latency_ms','#66d9dd',1]]);
+ chart('traffic',s.history||[],[['rx_bps','#72dfba',8/1e6],['tx_bps','#ac9bff',8/1e6]],'Mbit/s');
+ chart('latency',s.history||[],[['latency_ms','#66d9dd',1]],'ms');
  $('unsupported').textContent='Not available in this simulated UE: '+(s.unsupported||[]).join(' · ');
  $('updated').textContent='Agent samples ~5s; native UE/container collection ~10s plus collection time; TCP probe ~30s. Last collection: '+(s.updated?new Date(s.updated*1000).toLocaleTimeString():'waiting');
 }
