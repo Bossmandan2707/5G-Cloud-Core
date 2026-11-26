@@ -6,7 +6,7 @@ from pathlib import Path
 
 HEADERS = {"via", "from", "to", "contact", "call-id", "cseq", "route", "record-route",
            "p-asserted-identity", "p-preferred-identity", "max-forwards", "supported",
-           "allow", "content-type", "user-agent", "reason"}
+           "allow", "content-type", "user-agent", "reason", "p-access-network-info"}
 METHODS = {"INVITE", "ACK", "BYE", "CANCEL", "PRACK"}
 START = re.compile(
     rb"(?:INVITE|ACK|BYE|CANCEL|PRACK|OPTIONS|REGISTER|NOTIFY|SUBSCRIBE|UPDATE|MESSAGE)"

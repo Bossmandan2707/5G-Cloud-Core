@@ -5,6 +5,9 @@ local sip = require("sip")
 local sdp = require("sdp")
 local wire = require("ims.wire")
 local M = {}
+-- Static lab assertion, not measured RF or network-provided location.
+-- PLMN 999/05 + TAC 000001 (24 bits) + NCI 000000010 (36 bits).
+M.STATIC_PANI = "3GPP-NR-TDD;utran-cell-id-3gpp=99905000001000000010"
 
 function M.new(o)
     local sub, loop, io_ = o.sub, o.loop, o.io
@@ -63,7 +66,8 @@ function M.new(o)
             :header(sip.H_CONTACT, sub.registered_contact or wire.contact(sub))
         if rack then b:header(sip.H_RACK, rack) end
         if method == sip.INVITE then
-            b:header(sip.H_P_PREFERRED_IDENTITY, "<" .. originator .. ">")
+            b:header_name("P-Access-Network-Info", M.STATIC_PANI)
+                :header(sip.H_P_PREFERRED_IDENTITY, "<" .. originator .. ">")
                 :header(sip.H_ALLOW, "INVITE, ACK, CANCEL, BYE, PRACK, OPTIONS")
                 :header(sip.H_SUPPORTED, "100rel")
         end

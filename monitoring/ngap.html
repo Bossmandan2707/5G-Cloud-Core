@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Dan Powell Technologies · NGAP Transport</title>
+<title>Dan Powell Technologies · NGAP Signaling &amp; Transport</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a1020;color:#e7eefc}*{box-sizing:border-box}
 body{max-width:1450px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;gap:20px}
@@ -19,6 +19,8 @@ table{border-collapse:collapse;width:100%;font-size:13px;font-family:ui-monospac
 th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #263651;white-space:nowrap}
 th{color:#a8bad6;font-weight:500;position:sticky;top:0;background:#121c30}
 select{background:#16243a;color:#e7eefc;border:1px solid #30435f;padding:8px;border-radius:8px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:#0c1526;padding:16px;border-radius:8px;font-size:12px;line-height:1.7}
+button{background:#16243a;color:#66d9dd;border:1px solid #30435f;border-radius:6px;padding:7px 10px;cursor:pointer}
 @media(max-width:850px){.grid{grid-template-columns:1fr 1fr}}
 @media(max-width:480px){body{padding:16px}header{align-items:start;flex-direction:column}.value{font-size:22px}}
 </style></head>
@@ -27,8 +29,17 @@ select{background:#16243a;color:#e7eefc;border:1px solid #30435f;padding:8px;bor
 <span class="badge" id="status" role="status">Connecting…</span></header>
 <nav class="tabs" aria-label="Monitoring tabs"><a href="/">Performance</a><a href="/gtp">GTP-U traces</a>
 <a class="active" href="/ngap" aria-current="page">NGAP transport</a><a href="/interfaces">Interfaces</a><a href="/mdm">UE MDM</a><a href="/ims">IMS / VoNR</a></nav>
-<p>NGAP transport monitoring — SCTP packets on the configured AMF N2 port, not decoded NGAP procedures.
-Counts include DATA, acknowledgements and heartbeats. They do not prove UE registration or identify a subscriber.</p>
+<p>NGAP transport monitoring and decoded signaling on N2. The signaling trace below shows NGAP procedures;
+the separate transport counters include SCTP DATA, acknowledgements and heartbeats. Neither proves UE registration or identifies a subscriber.</p>
+<section class="panel" aria-labelledby="decoder-title"><h2 id="decoder-title">Decoded NGAP signaling · gNB ↔ AMF</h2>
+<span class="badge" id="decoderStatus" role="status">Decoder starting…</span>
+<p id="decoderMessage">Waiting for decoder status…</p>
+<pre id="ngapLadder" aria-label="Chronological NGAP signaling ladder">Waiting for new NGAP messages. Heartbeats are not signaling procedures.</pre>
+<p id="decoderCounts"></p>
+<div class="scroll"><table><thead><tr><th>UTC time</th><th>Direction</th><th>NGAP message</th><th>Outcome</th><th>Details</th></tr></thead><tbody id="decodedRows"></tbody></table></div>
+<h2>Selected NGAP message · sanitized details</h2><pre id="ngapDetails">Select a message above.</pre>
+<p id="decoderScope"></p><p>No synthetic or historical messages are replayed into this live trace. A quiet established UE can show no new procedures.
+Terminal: <code>tools/ngap-monitor --decode</code> or <code>tools/ngap-monitor --decode 30</code>.</p></section>
 <p id="message" role="status">Waiting for live capture…</p>
 <div class="grid">
 <div class="card"><div class="label">gNB → AMF · 5s AVERAGE</div><div class="value ul" id="ulRate">—</div><p id="ulTotal">—</p></div>
@@ -43,7 +54,7 @@ One-second bins; cards show five-second averages. Quiet periods are normal, and 
 <section class="panel"><h2>Capture context</h2><p id="endpoints">Reading configured endpoints…</p><p id="scope"></p>
 <p>Association state is sampled independently about every 15 seconds and marked stale after 45 seconds.
 Capture rotates briefly every 45 seconds and is not a lossless packet recorder.
-No NAS contents, procedure names, subscriber correlation or packet archive are exposed.</p></section>
+No NAS contents or packet archive are exposed. Decoded procedure names and transient context IDs appear only in the separate signaling trace above.</p></section>
 <section class="panel"><h2>Recent N2 SCTP packet metadata</h2>
 <label for="direction">Direction:</label> <select id="direction"><option value="ALL">All directions</option>
 <option value="UL">gNB → AMF</option><option value="DL">AMF → gNB</option><option value="OTHER">Other endpoints</option></select>
@@ -53,11 +64,42 @@ No NAS contents, procedure names, subscriber correlation or packet archive are e
 Terminal: <code>tools/ngap-monitor</code> or <code>tools/ngap-monitor 30</code>. No UE reconnect or call is performed.</p></section>
 <script>
 const $=id=>document.getElementById(id),names={UL:'gNB → AMF',DL:'AMF → gNB',OTHER:'Other'};
-let latest=null,busy=false,disconnected=false;
+let latest=null,busy=false,disconnected=false,selectedEvent=null;
 function connectionLost(){
  $('status').textContent='Disconnected';
  $('message').textContent='Connection lost; displayed packet history and counters are cached.';
  $('association').textContent='Unknown / disconnected';
+ $('decoderStatus').textContent='Decoder disconnected · cached trace';
+}
+function renderDecoded(data){
+ const d=data||{status:'unavailable',message:'Decoder unavailable',events:[],total_events:0,rejected_records:0};
+ $('decoderStatus').textContent=d.status==='live'?'NGAP decoder live':d.status;
+ $('decoderMessage').textContent=d.message;
+ $('decoderScope').textContent=d.scope||'';
+ const events=d.events.slice().sort((a,b)=>a.timestamp-b.timestamp||a.id-b.id);
+ const stamp=e=>new Date(e.timestamp*1000).toISOString().slice(11,23);
+ const arrow=e=>e.direction==='UL'?'gNB ─────> AMF':e.direction==='DL'?'gNB <───── AMF':'Other endpoints';
+ $('ngapLadder').textContent=events.length?events.map(e=>stamp(e)+'  '+arrow(e)+'  '+e.message+' ['+e.outcome+'; procedure '+e.procedure_code+']').join('\n'):
+  d.status==='live'?'Waiting for new NGAP messages. SCTP heartbeats are excluded.':'No decoded messages. '+d.message;
+ $('decoderCounts').textContent=(d.total_events||0)+' PDUs decoded · latest '+(d.buffer_limit||200)+' retained · '+(d.rejected_records||0)+' malformed/ambiguous records rejected';
+ $('decodedRows').replaceChildren();
+ function details(e){
+  selectedEvent=e.id;
+  const criticality=['reject','ignore','notify'];
+  $('ngapDetails').textContent=JSON.stringify({message:e.message,utc:new Date(e.timestamp*1000).toISOString(),
+   direction:names[e.direction],source:e.source+':'+e.source_port,destination:e.destination+':'+e.destination_port,
+   procedure_code:e.procedure_code,outcome:e.outcome,criticality:criticality[e.criticality]||'unknown',
+   stream:e.stream,ran_context_id:e.ran_context_id,amf_context_id:e.amf_context_id,causes:e.causes,
+   frame_bytes:e.frame_bytes,pdu_index:e.pdu_index},null,2);
+ }
+ for(const e of events){
+  const tr=document.createElement('tr');
+  for(const v of [stamp(e),names[e.direction],e.message,e.outcome]){const td=document.createElement('td');td.textContent=v;tr.appendChild(td);}
+  const td=document.createElement('td'),button=document.createElement('button');button.textContent='Inspect #'+e.id;
+  button.onclick=()=>details(e);td.appendChild(button);tr.appendChild(td);$('decodedRows').appendChild(tr);
+ }
+ if(events.length)details(events.find(e=>e.id===selectedEvent)||events[events.length-1]);
+ else{$('ngapDetails').textContent='Select a decoded message when new signaling occurs.';selectedEvent=null;}
 }
 function chart(rows){
  const canvas=$('chart'),r=canvas.getBoundingClientRect(),d=devicePixelRatio||1;
@@ -79,6 +121,7 @@ function chart(rows){
 }
 function render(data){
  latest=data;
+ renderDecoded(data.decoder);
  $('status').textContent=data.status==='live'?'N2 capture live':data.status;
  $('message').textContent=data.message;
  for(const[d,prefix]of [['UL','ul'],['DL','dl']]){

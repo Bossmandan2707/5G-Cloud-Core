@@ -4,6 +4,16 @@ from ims.sip_trace import messages
 
 
 class SipTraceTests(unittest.TestCase):
+    def test_static_ue_pani_is_visible_without_exposing_authentication(self):
+        pani = "3GPP-NR-TDD;utran-cell-id-3gpp=99905000001000000010"
+        packet = ("INVITE sip:fixture@ims.example SIP/2.0\r\n"
+                  "Call-ID: fixture\r\nCSeq: 1 INVITE\r\n"
+                  "P-Access-Network-Info: " + pani + "\r\n"
+                  "Authorization: private-fixture\r\n\r\n").encode()
+        event = messages(packet, "ue")[0]
+        self.assertEqual(event["headers"]["p-access-network-info"], pani)
+        self.assertIn(pani, event["message"])
+        self.assertNotIn("private-fixture", str(event))
     def test_trace_never_exposes_authorization_or_unknown_secret_headers(self):
         packet = (b"INVITE sip:+12025550101@ims.example SIP/2.0\r\n"
                   b"From: <sip:4599999977@ims.example>\r\n"

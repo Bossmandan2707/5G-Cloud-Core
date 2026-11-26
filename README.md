@@ -131,6 +131,30 @@ Both views report gNB → AMF and AMF → gNB SCTP packet metadata on the config
 
 This is **NGAP transport monitoring**, not NGAP/NAS decoding: SCTP DATA, acknowledgements and heartbeats are all counted, without retaining payloads, procedure names or subscriber identifiers. An established association does not prove UE registration. Video streaming need not produce NGAP signaling, and idle periods are normal. Capture rotations every 45 seconds can miss packets; this is not a lossless recorder. History and counters reset with the dashboard. Association observations older than 45 seconds are marked stale.
 
+### Decoded NGAP signaling, like SIP debug
+
+To add a chronological message trace alongside the transport counters:
+
+```bash
+podman build -t ngap-decode:0.1 tools/ngap-decode
+tools/ngap-monitor --decode       # continuous; Ctrl+C stops only this monitor
+tools/ngap-monitor --decode 30    # bounded observation including startup
+```
+
+Restart only the dashboard after adding or rebuilding the decoder image. Its existing `/ngap` page and `/api/ngap` endpoint expose an independent decoder status and the latest 200 decoded PDUs. Transport monitoring continues even if the optional decoder is unavailable.
+
+The helper uses TShark's NGAP dissector and SCTP reassembly on full packets, with tcpdump feeding TShark through a pipe rather than saving live pcaps. Structured output is sanitized **inside the helper**: only procedure/outcome names, timestamps, endpoints, selected numeric NGAP cause fields, stream metadata and transient RAN/AMF context IDs reach the host. NAS bodies, security keys, IMSI/SUCI/GUTI, generic Info columns and raw protocol trees are not exported. Unknown procedures are explicitly unknown; malformed or ambiguous records are rejected. Bundled PDUs are separate events; an ambiguous stream remains unknown rather than guessed.
+
+The signaling ladder displays messages such as `NGSetupRequest`, `NGSetupResponse`, `InitialUEMessage`, `DownlinkNASTransport`, `InitialContextSetupRequest` and `UEContextReleaseComplete`, with selectable sanitized details. These are observed PDUs, not a declaration that a complete registration or PDU session succeeded. SCTP heartbeats and acknowledgements do not appear as NGAP messages.
+
+The decoder is passive: it never restarts the gNB/UE or places a call. No new procedures on an idle UE is normal; synthetic test packets are not replayed into the live view. Its helper has bounded memory and tmpfs and restarts decoding every 120 seconds; rotations, missing fragments and malformed frames can leave an incomplete trace. Context IDs can be reused and do not identify a subscriber. Decoded history resets with the dashboard.
+
+After building the image, I can additionally run the opt-in, network-isolated synthetic packet integration tests:
+
+```bash
+NGAP_DECODER_INTEGRATION=1 .venv/bin/python -m unittest discover -s monitoring -p 'test_ngap_decode.py' -v
+```
+
 ## My interface map
 
 The Interfaces tab maps N1, N2, N3, N4, N6, N7, N8, N10, N11, N12, N13, N15, N35 and NRF discovery reference points applicable to this lab. It lists both-end addresses, all configured core listeners, and device addresses in the core pod, UE pod, Linux VM and Mac.

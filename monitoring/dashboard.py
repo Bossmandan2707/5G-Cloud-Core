@@ -22,6 +22,7 @@ from interfaces import InterfaceMonitor
 from mdm import MdmMonitor
 from ims_monitor import ImsMonitor
 from ngap_trace import NgapBuffer, NgapCapture, association_summary
+from ngap_decode import DecoderBuffer, NgapDecoder
 
 
 LOCK = threading.Lock()
@@ -41,6 +42,7 @@ IMS_HTML = Path(__file__).with_name("ims.html").read_bytes()
 IMS = ImsMonitor(PODMAN)
 NGAP_HTML = Path(__file__).with_name("ngap.html").read_bytes()
 NGAP = NgapBuffer()
+NGAP_DECODE = DecoderBuffer()
 
 
 def sample_host():
@@ -133,6 +135,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/ngap":
             data = NGAP.snapshot()
             data["association"] = association_summary(INTERFACES.snapshot())
+            data["decoder"] = NGAP_DECODE.snapshot()
             body = json.dumps(data, allow_nan=False).encode()
             content_type = "application/json"
         elif path == "/interfaces":
@@ -178,6 +181,7 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     capture = GtpCapture(PODMAN, TRACE)
     ngap_capture = NgapCapture(PODMAN, NGAP)
+    ngap_decoder = NgapDecoder(PODMAN, NGAP_DECODE)
 
     def terminate(_signum, _frame):
         raise KeyboardInterrupt
@@ -189,6 +193,7 @@ def main():
     try:
         capture.start()
         ngap_capture.start()
+        ngap_decoder.start()
         INTERFACES.start()
         MDM.start()
         IMS.start()
@@ -199,6 +204,7 @@ def main():
         server.server_close()
         capture.close()
         ngap_capture.close()
+        ngap_decoder.close()
         INTERFACES.close()
         MDM.close()
         IMS.close()

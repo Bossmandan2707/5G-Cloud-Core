@@ -242,6 +242,20 @@ The earlier P-CSCF registered-contact rejection was resolved by the module state
 
 The software controller verifies signaling, not bidirectional RTP, the planned test tone or a dedicated voice QoS flow.
 
+### Static UE-provided P-Access-Network-Info
+
+The UE call controller adds this static lab header to its initial INVITE:
+
+```text
+P-Access-Network-Info: 3GPP-NR-TDD;utran-cell-id-3gpp=99905000001000000010
+```
+
+The cell value concatenates configured MCC `999`, two-digit MNC `05`, six-hex-digit TAC `000001`, and nine-hex-digit NCI `000000010` (`0x10`). `3GPP-NR-TDD` is an explicit static lab choice, not evidence of measured RF or duplex operation in UERANSIM. The value is configured as `STATIC_PANI` near the top of `call_control.lua`; it is not automatically refreshed from radio telemetry.
+
+This is **UE/user-provided** access information: it has neither a `network-provided` marker nor an invented `user-provided` marker. The header does not assert a trusted network location or alter From, P-Preferred-Identity, P-Asserted-Identity, authentication, IPsec or provider routing. The B2BUA may apply its own outbound header policy; forwarding this header to the carrier is not implied.
+
+INVITE retransmissions reuse the same bytes. This narrowly scoped change does not add PANI to REGISTER, ACK, BYE, PRACK or CANCEL. New saved SIP traces retain the header in their sanitized initial INVITE; previous captures are not rewritten. Native controller tests verify construction with real codecs and fake I/O, without dialing.
+
 ### IPsec association lifecycle checks
 
 The deployed Kamailio development revision `987459` exposed a missing-SA failure: a UE INVITE used ESP SPI `0x1003`, while the P-CSCF had no corresponding SA and counted seven `XfrmInNoStates` packets. SIP registration records alone were therefore insufficient proof that protected requests could pass.

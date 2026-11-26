@@ -1,0 +1,6 @@
+FROM docker.io/library/alpine:3.23
+RUN apk add --no-cache tshark tcpdump python3
+COPY decoder.py /decoder.py
+RUN python3 /decoder.py --check
+ENV PYTHONUNBUFFERED=1
+CMD ["python3", "/decoder.py"]
