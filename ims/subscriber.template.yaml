@@ -1,0 +1,27 @@
+# Design targets, not an executable provisioning request or active subscriber.
+status: not-provisioned
+imsi: "999050000000001"
+msisdn: "4599999977"
+realm: bossman.ims.mnc005.mcc999.3gppnetwork.org
+private_identity: 999050000000001@bossman.ims.mnc005.mcc999.3gppnetwork.org
+public_identities:
+  - sip:4599999977@bossman.ims.mnc005.mcc999.3gppnetwork.org
+  - sip:999050000000001@bossman.ims.mnc005.mcc999.3gppnetwork.org
+  - tel:+4599999977
+dnn: ims
+slice:
+  sst: 1
+qos_targets:
+  signaling_5qi: 5
+  conversational_voice_5qi: 1
+authentication:
+  algorithm: MILENAGE
+  material_source: private SIM profile outside Git; never insert K/OP/OPc here
+  sim_programming: not performed
+  core_provisioning: not performed
+  ims_hss_provisioning: not performed
+notes:
+  - Match the actual USIM/ISIM IMPI, IMPU, realm, keys and sequence state before activation.
+  - Do not replace existing internet or simulator subscriber records.
+  - QoS targets are not applied policies; validate N5 and flow setup/teardown separately.
+  - No PSTN, public numbering, emergency calling or SMS service is configured.

@@ -28,7 +28,7 @@ th{color:#a4b6d1;font-weight:500}.tablewrap{overflow:auto;max-height:530px}thead
 <body>
 <header><div><div class="eyebrow">LIVE N3 USER PLANE · UDP 2152</div>
 <h1>Dan Powell Technologies</h1>
-<p><a href="/">← Performance</a> &nbsp; <a href="/gtp">GTP-U traces</a> &nbsp; <a href="/metrics">Prometheus metrics</a></p>
+<p><a href="/">← Performance</a> &nbsp; <a href="/gtp">GTP-U traces</a> &nbsp; <a href="/ngap">NGAP transport</a> &nbsp; <a href="/interfaces">Interfaces</a> &nbsp; <a href="/mdm">UE MDM</a> &nbsp; <a href="/ims">IMS / VoNR</a> &nbsp; <a href="/metrics">Prometheus metrics</a></p>
 </div><span class="badge" id="status">Connecting…</span></header>
 <p id="capture">Waiting for capture…</p>
 <div class="grid">
@@ -64,14 +64,18 @@ function chart(history){
   canvas.width=r.width*ratio;canvas.height=r.height*ratio;
   const c=canvas.getContext('2d');c.scale(ratio,ratio);
   const max=Math.max(0.01,...history.flatMap(h=>[h.UL,h.DL]))*1.15;
-  const w=r.width,h=r.height,p=10;
+  const w=r.width,h=r.height,p=10,top=26;
+  const ticks=Array.from({length:5},(_,i)=>(max*(1-i/4)).toLocaleString(undefined,{maximumSignificantDigits:3}));
+  c.font='11px system-ui';c.fillStyle='#9aacca';
+  const left=Math.max(...ticks.map(t=>c.measureText(t).width))+12;
+  c.textAlign='left';c.fillText('Mbit/s',left,12);c.textAlign='right';c.textBaseline='middle';
   c.strokeStyle='#283850';c.lineWidth=1;
-  for(let i=0;i<5;i++){const y=p+i*(h-2*p)/4;c.beginPath();c.moveTo(p,y);c.lineTo(w-p,y);c.stroke();}
+  for(let i=0;i<5;i++){const y=top+i*(h-top-p)/4;c.beginPath();c.moveTo(left-4,y);c.lineTo(w-p,y);c.stroke();c.fillText(ticks[i],left-8,y);}
+  c.beginPath();c.moveTo(left,top);c.lineTo(left,h-p);c.stroke();
   [['UL','#66d9dd'],['DL','#ac9bff']].forEach(([key,color])=>{
     c.strokeStyle=color;c.lineWidth=2;c.beginPath();
-    history.forEach((row,i)=>{const x=p+i/Math.max(history.length-1,1)*(w-2*p),y=h-p-row[key]/max*(h-2*p);if(i===0)c.moveTo(x,y);else c.lineTo(x,y);});c.stroke();
+    history.forEach((row,i)=>{const x=left+i/Math.max(history.length-1,1)*(w-left-p),y=h-p-row[key]/max*(h-top-p);if(i===0)c.moveTo(x,y);else c.lineTo(x,y);});c.stroke();
   });
-  c.fillStyle='#9aacca';c.font='11px system-ui';c.fillText(max.toFixed(3)+' Mbit/s',12,17);
 }
 function render(data){
   $('status').textContent=paused?'Display paused':data.status==='live'?'Capture live':data.status;

@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Monitor saved-lab NGAP transport without changing core or UE state."""
+import os
+from pathlib import Path
+import sys
+
+root = Path(__file__).resolve().parent.parent
+python = root / ".venv/bin/python"
+if not python.is_file():
+    raise SystemExit("Project virtual environment missing; no environment changes attempted.")
+if Path(sys.prefix).resolve() != (root / ".venv").resolve():
+    os.execv(str(python), [str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
+sys.path.insert(0, str(root / "monitoring"))
+from ngap_cli import main
+
+raise SystemExit(main())

@@ -1,0 +1,100 @@
+# Project planning data only, NOT Open5GS/freeDiameter or Kubernetes config.
+# No runtime component loads this file. Changing enabled does not deploy it.
+schema_version: 1
+profile_type: s8hr-partner-planning
+status: draft-inactive
+enabled: false
+agreement_status: not-established
+operator_parameters_confirmed: false
+direction: inbound
+architecture: LTE-EPC-S8HR
+
+home_network:
+  brand: Three UK
+  allocation_holder: Hutchison 3G UK Ltd
+  country: United Kingdom
+  plmn:
+    mcc: "234"
+    mnc: "20"
+  # Allocation evidence is not evidence of operational use or roaming approval.
+  allocation_source: https://www.ofcom.org.uk/siteassets/resources/documents/phones-telecoms-and-internet/information-for-industry/numbering/regular-updates/codes/mnc.csv?v=426913
+  allocation_checked_on: "2026-11-11"
+  reference_only_additional_allocations:
+    - mcc: "235"
+      mnc: "94"
+      included_in_profile_scope: false
+
+visited_network:
+  operator: Dan Powell Technologies lab
+  plmn:
+    mcc: "999"
+    mnc: "05"
+
+imsi:
+  # Identification envelope for 15-digit IMSIs, NOT an admission allowlist.
+  home_plmn_prefix: "23420"
+  length: 15
+  identification_pattern: "^23420[0-9]{10}$"
+  identification_envelope:
+    first: "234200000000000"
+    last: "234209999999999"
+  operator_authorized_ranges: []
+  admission_policy: deny-until-operator-approved
+
+s8:
+  enabled: false
+  control_plane:
+    interface: S8-C
+    local_function: SGW-C
+    remote_function: PGW-C
+    protocol: GTPv2-C
+    transport: UDP
+    port: 2123
+    local_bind_address: null
+    local_advertised_address: null
+    remote_address: null
+  user_plane:
+    interface: S8-U
+    local_function: SGW-U
+    remote_function: PGW-U
+    protocol: GTP-U
+    transport: UDP
+    port: 2152
+    local_bind_address: null
+    local_advertised_address: null
+    remote_address: null
+  operator_approved_apns: []
+  pgw_selection:
+    method: null
+    dns_resolvers: []
+    apn_to_home_pgw: []
+  interconnect:
+    local_interface: null
+    peer_networks: []
+    security_policy: null
+    routing_policy: null
+    firewall_policy: null
+
+diameter:
+  s6a:
+    enabled: false
+    connect_peer: false
+    application_id: 16777251
+    vendor_id: 10415
+    local_function: MME
+    remote_function: home-HSS-via-agreed-peer
+    # PLMN-derived candidates only; actual deployed realms require confirmation.
+    candidate_visited_realm: epc.mnc005.mcc999.3gppnetwork.org
+    candidate_home_realm: epc.mnc020.mcc234.3gppnetwork.org
+    candidate_realms_confirmed: false
+    origin_host: null
+    origin_realm: null
+    destination_host: null
+    destination_realm: null
+    peer_identity: null
+    peer_address: null
+    peer_port: null
+    transport: null
+    security_policy: null
+    accept_unknown_peers: false
+    realm_routes: []

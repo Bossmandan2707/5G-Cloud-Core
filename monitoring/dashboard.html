@@ -29,7 +29,7 @@ footer{margin:22px 0;font-size:13px;color:#97a9c6}
 <body>
 <header><div><div class="eyebrow">OPEN5GS / UERANSIM · 5G LAB</div><h1>Dan Powell Technologies</h1>
 <p>Live host resources and lab-container telemetry. Local access only.<br>
-<a href="/">Performance</a> &nbsp; <a href="/gtp">Live GTP-U traces →</a></p></div>
+<a href="/">Performance</a> &nbsp; <a href="/gtp">Live GTP-U traces</a> &nbsp; <a href="/ngap">NGAP transport</a> &nbsp; <a href="/interfaces">Interfaces</a> &nbsp; <a href="/mdm">UE MDM</a> &nbsp; <a href="/ims">IMS / VoNR →</a></p></div>
 <span class="badge" id="connection">Connecting…</span></header>
 <div class="grid">
 <div class="card"><div class="label">HOST CPU</div><div class="value" id="cpu">—</div><div class="muted" id="load">Waiting for samples</div></div>
@@ -57,26 +57,31 @@ let lastSample=0, busy=false;
 const percent=v=>Number(v).toFixed(1)+'%';
 const mbps=v=>(v*8/1e6).toFixed(2);
 const gib=v=>(v/1024**3).toFixed(1)+' GiB';
-function chart(id,series,max){
+function chart(id,series,max,unit){
   const c=$(id),r=c.getBoundingClientRect(),d=devicePixelRatio||1;
   c.width=r.width*d;c.height=r.height*d;
   const ctx=c.getContext('2d');ctx.scale(d,d);
-  const w=r.width,h=r.height,p=8;
+  const w=r.width,h=r.height,p=8,top=26;
+  const ticks=Array.from({length:5},(_,i)=>(max*(1-i/4)).toLocaleString(undefined,{maximumSignificantDigits:3}));
+  ctx.font='11px system-ui';ctx.fillStyle='#97a9c6';
+  const left=Math.max(...ticks.map(t=>ctx.measureText(t).width))+12;
+  ctx.textAlign='left';ctx.fillText(unit,left,12);ctx.textAlign='right';ctx.textBaseline='middle';
   ctx.strokeStyle='#25334c';ctx.lineWidth=1;
-  for(let i=0;i<5;i++){const y=p+(h-2*p)*i/4;ctx.beginPath();ctx.moveTo(p,y);ctx.lineTo(w-p,y);ctx.stroke();}
+  for(let i=0;i<5;i++){const y=top+(h-top-p)*i/4;ctx.beginPath();ctx.moveTo(left-4,y);ctx.lineTo(w-p,y);ctx.stroke();ctx.fillText(ticks[i],left-8,y);}
+  ctx.beginPath();ctx.moveTo(left,top);ctx.lineTo(left,h-p);ctx.stroke();
   series.forEach(([key,color])=>{
     ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();
     history.forEach((s,i)=>{
-      const x=p+i/Math.max(history.length-1,1)*(w-2*p);
-      const y=h-p-Math.min(s[key]/max,1)*(h-2*p);
+      const x=left+i/Math.max(history.length-1,1)*(w-left-p);
+      const y=h-p-Math.min(s[key]/max,1)*(h-top-p);
       if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
     });ctx.stroke();
   });
 }
 function draw(){
-  chart('resources',[['cpu','#66d9dd'],['memory','#ac9bff']],100);
+  chart('resources',[['cpu','#66d9dd'],['memory','#ac9bff']],100,'%');
   chart('traffic',[['rx','#66d9dd'],['tx','#ac9bff']],
-    Math.max(1,...history.flatMap(s=>[s.rx,s.tx]))*1.1);
+    Math.max(1,...history.flatMap(s=>[s.rx,s.tx]))*1.1,'Mbit/s');
 }
 async function refresh(){
   if(busy)return;busy=true;

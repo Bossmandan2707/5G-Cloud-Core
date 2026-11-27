@@ -83,6 +83,30 @@ spec:
       volumeMounts:
         - {name: config, mountPath: /etc/ueransim, readOnly: true}
         - {name: tun, mountPath: /dev/net/tun}
+    - name: mdm
+      image: localhost/ue-mdm:0.1
+      # Build first: podman build -t localhost/ue-mdm:0.1 telemetry/ue_mdm
+      # Read-only telemetry; no UE configuration, host mounts or container socket.
+      env:
+        - name: UE_MDM_IMSI
+          value: "999050000000001"
+        - name: LAB_NAME
+          value: "Dan Powell Technologies"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        limits:
+          cpu: "200m"
+          memory: "96Mi"
+        requests:
+          cpu: "50m"
+          memory: "32Mi"
   volumes:
     - name: config
       configMap:
